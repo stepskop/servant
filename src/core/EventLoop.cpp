@@ -176,7 +176,7 @@ int EventLoop::run() {
         for (size_t i = 0; i < fds.size(); i++) {
             struct pollfd polled = fds[i];
 
-            // Is listener FD -> accepts connections.
+            // Is listener FD -> accept new connections.
             if (this->listeners.count(polled.fd)) {
                 if (polled.revents & POLLIN) this->accept_connection(this->listeners[polled.fd]);
                 continue;
@@ -191,7 +191,7 @@ int EventLoop::run() {
 
             // Else -> Is connection FD.
             if (polled.revents & (POLLHUP|POLLERR|POLLNVAL)) {
-                Logger::debug(with_fd(polled.fd, "Closing errored connection."));
+                Logger::error(with_fd(polled.fd, "Closing errored connection."));
                 this->close_connection(conn);
             } else if (polled.revents & POLLIN) {
                 handle_read(conn);
