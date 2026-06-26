@@ -139,12 +139,8 @@ void EventLoop::handle_write(Connection *connection) {
 int EventLoop::run() {
     // Catch SIGINT/SIGTERM so poll() returns with EINTR and the loop exits cleanly.
     // No SA_RESTART -> poll is interrupted instead of auto-restarted.
-    struct sigaction sa;
-    sa.sa_handler = on_stop_signal;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sigaction(SIGINT, &sa, NULL);
-    sigaction(SIGTERM, &sa, NULL);
+    signal(SIGINT, on_stop_signal);
+    signal(SIGTERM, on_stop_signal);
 
     while (!g_stop) {
         std::vector<struct pollfd> fds;

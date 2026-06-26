@@ -2,6 +2,7 @@
 # define EVENTLOOP_HPP
 
 # include <map>
+# include <csignal>
 # include "Connection.hpp"
 # include "Listener.hpp"
 
