@@ -7,7 +7,7 @@ CONFIG_DIR   = config/
 CONFIG_SRC   =
 
 CORE_DIR     = core/
-CORE_SRC     =
+CORE_SRC     = Connection.cpp EventLoop.cpp Listener.cpp
 
 HTTP_DIR     = http/
 HTTP_SRC     =
@@ -19,7 +19,7 @@ CGI_DIR      = cgi/
 CGI_SRC      =
 
 UTILS_DIR    = utils/
-UTILS_SRC    = Logger.cpp
+UTILS_SRC    = Logger.cpp Utils.cpp
 
 MAIN         = main.cpp
 

@@ -2,7 +2,6 @@
 # define LOGGER_HPP
 
 # include <string>
-# include <sstream>
 
 enum LogLevel {
     DEBUG,
@@ -11,25 +10,20 @@ enum LogLevel {
     ERROR,
 };
 
+#ifndef LOG_LEVEL
+# define LOG_LEVEL DEBUG
+#endif
+
 class Logger {
     private:
-        LogLevel level;
-        void log_msg(std::string msg, LogLevel level);
+        static void log_msg(std::string msg, LogLevel level);
     public:
-        Logger(LogLevel level = INFO);
-
-        void debug(std::string msg);
-        void info(std::string msg);
-        void warn(std::string msg);
-        void error(std::string msg);
+        static void debug(std::string msg);
+        static void info(std::string msg);
+        static void warn(std::string msg);
+        static void error(std::string msg);
 };
 
-class Str {
-    std::ostringstream ss;
-public:
-    template <typename T>
-    Str& operator<<(const T& v) { ss << v; return *this; }
-    operator std::string() const { return ss.str(); }
-};
+std::string with_fd(int, std::string);
 
 #endif

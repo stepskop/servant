@@ -2,8 +2,15 @@
 
 #include <ctime>
 #include <iostream>
+#include <sstream>
 
 static const char *RESET = "\033[0m";
+
+std::string with_fd(int fd, std::string msg) {
+    std::stringstream ss;
+    ss << "[" << fd << "]" << " " << msg;
+    return ss.str();
+}
 
 // label + color derived from level — single source of truth.
 const char *label_for(LogLevel level) {
@@ -26,10 +33,6 @@ const char *color_for(LogLevel level) {
     return RESET;
 }
 
-Logger::Logger(LogLevel level) {
-    this->level = level;
-}
-
 void Logger::debug(std::string msg) {
     log_msg(msg, DEBUG);
 }
@@ -47,8 +50,8 @@ void Logger::error(std::string msg) {
 }
 
 void Logger::log_msg(std::string msg, LogLevel level) {
-    // Filter below configured threshold.
-    if (level < this->level)
+    // Filter below compile-time threshold.
+    if (level < LOG_LEVEL)
         return;
 
     // ERROR to stderr, rest to stdout.
