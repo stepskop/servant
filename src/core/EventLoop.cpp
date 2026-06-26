@@ -2,12 +2,29 @@
 #include "../../include/Logger.hpp"
 #include "../../include/Utils.hpp"
 #include <cstddef>
+#include <stdint.h>
 #include <map>
 #include <utility>
 #include <sys/poll.h>
 #include <vector>
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <csignal>
+#include <cerrno>
+
+// Set by the signal handler, polled by the run loop for a clean shutdown.
+volatile sig_atomic_t g_stop = 0;
+
+static void on_stop_signal(int) {
+    g_stop = 1;
+}
+
+EventLoop::~EventLoop() {
+    for (std::map<int, Connection*>::iterator it = this->connections.begin(); it != this->connections.end(); it++)
+        delete it->second;
+    for (std::map<int, Listener*>::iterator it = this->listeners.begin(); it != this->listeners.end(); it++)
+        delete it->second;
+}
 
 short resolve_poll_event(ConnectionState state) {
     switch (state) {
@@ -23,9 +40,12 @@ short resolve_poll_event(ConnectionState state) {
     }
 }
 
-void EventLoop::add_listener(Listener * listener) {
+void EventLoop::add_listener(in_addr_t host, uint16_t port) {
+    Listener *listener = new Listener(host, port);
+
     if (!listener->start()) {
         Logger::error("Listener didn't start");
+        delete listener;
         return;
     }
 
@@ -117,8 +137,16 @@ void EventLoop::handle_write(Connection *connection) {
 }
 
 int EventLoop::run() {
+    // Catch SIGINT/SIGTERM so poll() returns with EINTR and the loop exits cleanly.
+    // No SA_RESTART -> poll is interrupted instead of auto-restarted.
+    struct sigaction sa;
+    sa.sa_handler = on_stop_signal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
 
-    while (true) {
+    while (!g_stop) {
         std::vector<struct pollfd> fds;
 
         // Push listeners pollable FDs.
@@ -139,15 +167,14 @@ int EventLoop::run() {
             fds.push_back(connection_pfd);
         }
 
-
         // Poll the FDs.
         Logger::debug("Polling.");
         int ready_n = poll(&fds[0], fds.size(), -1); // -1 to make the poll timeout infinite
         Logger::debug("Polled.");
         if (ready_n == -1) {
+            if (errno == EINTR) continue; // Signal arrived -> recheck g_stop.
             Logger::error("Polling failed.");
             continue; // Try polling again.
-            // return 1;
         }
 
         for (size_t i = 0; i < fds.size(); i++) {
@@ -159,7 +186,12 @@ int EventLoop::run() {
                 continue;
             }
 
-            Connection *conn = this->connections.at(polled.fd);
+            // No connection found with this FD;
+            if (!connections.count(polled.fd)) {
+                Logger::error(with_fd(polled.fd, "Expected this FD to belong to a connection. This should not happen."));
+                continue;
+            }
+            Connection *conn = connections[polled.fd];
 
             // Else -> Is connection FD.
             if (polled.revents & (POLLHUP|POLLERR|POLLNVAL)) {
@@ -173,5 +205,6 @@ int EventLoop::run() {
         }
     }
 
-    return 1;
+    Logger::info("Shutdown signal received. Exiting.");
+    return 0;
 }

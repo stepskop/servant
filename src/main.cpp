@@ -7,11 +7,7 @@ int main() {
     signal(SIGPIPE, SIG_IGN);
 
     EventLoop loop;
-    Listener *listener = new Listener(inet_addr("0.0.0.0"), 8080);
+    loop.add_listener(inet_addr("0.0.0.0"), 8080);
 
-    loop.add_listener(listener);
-    loop.run();
-
-    delete listener;
-    return 0;
+    return loop.run();
 }

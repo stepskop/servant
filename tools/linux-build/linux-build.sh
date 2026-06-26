@@ -33,7 +33,7 @@ if [ -t 0 ] && [ -t 1 ]; then
 fi
 
 echo ">> Running in Linux container: ${CMD[*]}"
-docker run --rm "${TTY_FLAGS[@]}" \
+docker run --rm -p 8080:8080 "${TTY_FLAGS[@]}" \
     -v "$REPO_ROOT:/webserv" \
     "$IMAGE" \
     "${CMD[@]}"

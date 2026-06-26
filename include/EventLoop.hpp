@@ -14,7 +14,8 @@ class EventLoop {
         void handle_read(Connection *);
         void handle_write(Connection *);
     public:
-        void add_listener(Listener *);
+        ~EventLoop();
+        void add_listener(in_addr_t host, uint16_t port);
         int run();
 };
 
