@@ -25,9 +25,9 @@ int Listener::start() {
     this->fd = socket(this->address.sin_family, SOCK_STREAM, 0);
     if (this->fd == -1) {
         Logger::error("Error creating socket.");
-        return 1;
+        return 0;
     }
-    Logger::debug(Str() << "Server socket FD: " << this->fd);
+    Logger::debug(with_fd(this->fd, "Opening server socket."));
 
     // Allow instant re-binding after restart;
     int one = 1;
@@ -39,15 +39,15 @@ int Listener::start() {
     int bind_res = bind(this->fd, (struct sockaddr *)&address, sizeof(address));
     if (bind_res == -1) {
         Logger::error("Unable to bind a socket.");
-        return 1;
+        return 0;
     }
 
-    int listen_res = listen(this->fd, 5);
+    int listen_res = listen(this->fd, SOMAXCONN);
     if (listen_res == -1) {
         Logger::error("Error during listen on server socket.");
-        return 1;
+        return 0;
     }
 
     Logger::info(Str() << "Listening on " << inet_ntoa(this->address.sin_addr) << ":" << ntohs(this->address.sin_port));
-    return 0;
+    return 1;
 }

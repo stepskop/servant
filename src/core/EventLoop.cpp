@@ -24,8 +24,7 @@ short resolve_poll_event(ConnectionState state) {
 }
 
 void EventLoop::add_listener(Listener * listener) {
-    int listen_res = listener->start();
-    if (listen_res == -1) {
+    if (!listener->start()) {
         Logger::error("Listener didn't start");
         return;
     }
