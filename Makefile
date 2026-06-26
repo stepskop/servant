@@ -19,7 +19,7 @@ CGI_DIR      = cgi/
 CGI_SRC      =
 
 UTILS_DIR    = utils/
-UTILS_SRC    =
+UTILS_SRC    = Logger.cpp
 
 MAIN         = main.cpp
 
@@ -61,4 +61,9 @@ fclean: clean
 
 re: fclean all
 
-.PHONY: all clean fclean re
+linux:
+	./tools/linux-build/linux-build.sh make re
+
+full: linux re
+
+.PHONY: all clean fclean re full linux
