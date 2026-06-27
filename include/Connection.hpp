@@ -5,7 +5,8 @@
 # include <string>
 # include "Request.hpp"
 
-# define MAX_HEADER_SIZE 8192 // 8 KB;
+# define MAX_HEADER_SIZE 8192 // 8 KB
+# define MAX_BODY_SIZE 10240000 // 10 MB
 
 enum ConnectionState {
   READING_HEADERS,
@@ -25,6 +26,7 @@ class Connection {
         std::string out_buf;
         size_t sent;
         Request req;
+        void respond(size_t status, const std::string& body = "");
     private:
         Connection(const Connection& src);
         Connection& operator=(const Connection& src);

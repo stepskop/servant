@@ -9,16 +9,15 @@ enum RequestMethod {
 };
 
 typedef struct {
-    std::map<std::string, std::string> headers;
-    RequestMethod method;
+    std::string method;     // raw token: "GET", "POST", ...
+    std::string target;     // path only, e.g. "/index.html"
+    std::string query;      // after first '?', no '?'; empty if none
+    std::string version;    // "HTTP/1.1"
+    std::map<std::string, std::string> headers; // lowercased names
     std::string body;
-    std::string target;
-    std::string version;
+    size_t body_size;
 } Request;
 
-// Parse the header block (everything before the \r\n\r\n) into req.
-// Returns the HTTP status: 200 on success, or 400 / 501 / 505 on a
-// malformed or unsupported request.
-int parse_request(const std::string& block, Request& req);
+int parse_header(std::string &block, Request &req);
 
 #endif

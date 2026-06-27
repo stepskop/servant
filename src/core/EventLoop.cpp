@@ -1,11 +1,11 @@
 #include "EventLoop.hpp"
-#include "Response.hpp"
+#include "Connection.hpp"
+#include "Request.hpp"
 #include "Logger.hpp"
 #include "Utils.hpp"
 #include <cstddef>
 #include <stdint.h>
 #include <string>
-#include <sstream>
 #include <map>
 #include <utility>
 #include <poll.h>
@@ -90,30 +90,55 @@ void EventLoop::handle_read(Connection *connection) {
         if (recv_res == -1) Logger::error(with_fd(fd, "Receiving failed."));
         if (recv_res == 0) Logger::info(with_fd(fd, "Connection closed by peer."));
 
-        this->close_connection(connection);
-        return;
+        return this->close_connection(connection);
     }
     // Append new buffer;
     connection->in_buf.append(buffer, recv_res);
-    size_t pos = connection->in_buf.find(Str() << CRLF << CRLF);
+    std::string header_end = Str() << CRLF << CRLF;
+    size_t pos = connection->in_buf.find(header_end);
 
-    if (pos != std::string::npos) {
-        // Parse request
+    if (connection->state == READING_HEADERS) {
+        if (pos == std::string::npos) { // If no header found.
+            if (connection->in_buf.length() < MAX_HEADER_SIZE) return; // Can read more.
+            return connection->respond(400); // Cannot read more.
+        }
 
-        std::stringstream body;
-        body << "Mirek je borec" << std::endl;
-        std::string body_str = body.str();
-        connection->out_buf.append(build_response(200, body_str));
-        connection->sent = 0;
-        connection->state = WRITING;
-    } else if (connection->in_buf.length() >= MAX_HEADER_SIZE) {
-        // If header not found;
-        connection->out_buf.append(build_response(400));
-        connection->sent = 0;
-        connection->state = WRITING;
-    } else {
-        // Continue with current state (READING_HEADERS)
-        return;
+        std::string header_block = connection->in_buf.substr(0, pos);
+
+        int parse_res = parse_header(header_block, connection->req);
+
+        // If parsing doesn't end with 200. Return 400: Bad request.
+        if (parse_res != 200) return connection->respond(parse_res);
+
+        // TEMP: Reject chunked requests.
+        std::string transfer_encoding_raw = get_value(connection->req.headers, "transfer-encoding");
+        if (!transfer_encoding_raw.empty() && transfer_encoding_raw == "chunked") {
+            return connection->respond(501);
+        }
+
+        std::string content_length_raw = get_value(connection->req.headers, "content-length");
+
+        // TEMP: If there is no content (body), respond immediatelly.
+        if (content_length_raw.empty()) return connection->respond(200);
+
+        long content_length = 0;
+        if (!is_digits(content_length_raw) || !safe_atol(content_length_raw, content_length)) return connection->respond(400);
+        if (content_length == 0) return connection->respond(200); // There is no body.
+        if (content_length > MAX_BODY_SIZE) return connection->respond(413); // Body is too big.
+
+        // Remove header from the buffer.
+        connection->in_buf.erase(0, pos + header_end.size());
+        connection->req.body_size = content_length;
+        connection->state = READING_BODY;
+    }
+
+    if (connection->state == READING_BODY) {
+        if (connection->in_buf.size() < connection->req.body_size) return; // Need to read more;
+        connection->req.body.swap(connection->in_buf);
+        connection->req.body.resize(connection->req.body_size);
+
+        // TEMP: Just return recieved body.
+        return connection->respond(200, connection->req.body);
     }
 }
 
@@ -126,16 +151,13 @@ void EventLoop::handle_write(Connection *connection) {
         if (send_res == -1) Logger::error(with_fd(connection->fd, "Error during while writing to the socket."));
         if (send_res == 0) Logger::warn(with_fd(connection->fd, "No bytes were sent."));
 
-        this->close_connection(connection);
-        return ;
+        return this->close_connection(connection);;
     }
     connection->sent += send_res;
 
     if (connection->sent == connection->out_buf.size()) {
         // TODO: If keep-alive -> reset to READING_HEADERS
-
-        this->close_connection(connection);
-        return;
+        return this->close_connection(connection);;
     }
 }
 
@@ -193,8 +215,11 @@ int EventLoop::run() {
             Connection *conn = connections[polled.fd];
 
             // Else -> Is connection FD.
-            if (polled.revents & (POLLHUP|POLLERR|POLLNVAL)) {
-                Logger::error(with_fd(polled.fd, "Closing errored connection."));
+            if (polled.revents & POLLHUP) {
+                Logger::debug(with_fd(polled.fd, "Peer hung up. Closing."));
+                this->close_connection(conn);
+            } else if (polled.revents & (POLLERR|POLLNVAL)) {
+                Logger::error(with_fd(polled.fd, "Socket error. Closing."));
                 this->close_connection(conn);
             } else if (polled.revents & POLLIN) {
                 handle_read(conn);
