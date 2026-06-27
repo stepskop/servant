@@ -6,7 +6,9 @@
 #include <utility>
 #include <vector>
 
-int parse_header(std::string &block, Request &req) {
+Request::Request(): body_size(0) {}
+
+int parse_header(const std::string &block, Request &req) {
     std::vector<std::string> lines = split(block, CRLF);
     std::string first_line = lines[0];
 
@@ -36,7 +38,9 @@ int parse_header(std::string &block, Request &req) {
     // Version must match "HTTP/X.Y" shape (400), then be exactly HTTP/1.1 (else 505).
     std::string version = request_line[2];
     if (version.size() != 8 || version.compare(0, 5, "HTTP/") != 0
-        || !isdigit(version[5]) || version[6] != '.' || !isdigit(version[7])) {
+        || version[6] != '.'
+        || !isdigit(static_cast<unsigned char>(version[5]))
+        || !isdigit(static_cast<unsigned char>(version[7]))) {
         Logger::debug(Str() << "Malformed HTTP version: " << version);
         return 400;
     }
@@ -71,7 +75,7 @@ int parse_header(std::string &block, Request &req) {
 
         // Normalize name to lowercase for case-insensitive lookups.
         for (size_t j = 0; j < name.size(); j++) {
-            name[j] = std::tolower(name[j]);
+            name[j] = std::tolower(static_cast<unsigned char>(name[j]));
         }
 
         req.headers.insert(std::make_pair(name, value));
