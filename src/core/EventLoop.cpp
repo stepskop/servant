@@ -193,7 +193,7 @@ void EventLoop::handle_read(Connection *connection) {
     }
 
     Logger::debug(Str() << "Opening the file: " << file_path);
-    int file_fd = open(file_path.c_str(), O_RDONLY);
+    int file_fd = open(file_path.c_str(), O_RDONLY); // TODO: Make this not leak.
     if (file_fd == -1) {
         Logger::error(with_fd(connection->fd, Str() << "Couldn't open() the file: " << file_path));
         return connection->respond(403);
