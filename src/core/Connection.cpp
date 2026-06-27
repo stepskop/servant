@@ -7,8 +7,14 @@ Connection::~Connection() {
     close(this->fd);
 }
 
-void Connection::respond(size_t status, const std::string& body) {
-    out_buf.append(build_response(status, body));
+void Connection::respond(size_t status, const std::string& body, const std::string& content_type) {
+    out_buf.append(build_response(status, body, content_type));
+    sent = 0;
+    state = WRITING;
+}
+
+void Connection::redirect(const std::string& location) {
+    out_buf.append(build_redirect(location));
     sent = 0;
     state = WRITING;
 }

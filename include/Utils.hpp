@@ -21,5 +21,8 @@ std::string trim(const std::string& s);
 std::string get_value(const std::map<std::string, std::string> &map, const std::string &key);
 bool is_digits(const std::string &s);
 bool safe_atol(const std::string &s, long &out);
+// Lexically collapse "." and ".." in an absolute URL path.
+// Returns false if a ".." escapes above root (traversal attempt).
+bool normalize_path(const std::string &path, std::string &out);
 
 #endif

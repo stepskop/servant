@@ -4,6 +4,9 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 
+# define ROOT "./www"
+# define DEFAULT_FILE "index.html"
+
 class Listener {
     public:
         sockaddr_in address;

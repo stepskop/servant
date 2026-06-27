@@ -26,7 +26,8 @@ class Connection {
         std::string out_buf;
         size_t sent;
         Request req;
-        void respond(size_t status, const std::string& body = "");
+        void respond(size_t status, const std::string& body = "", const std::string& content_type = "text/html");
+        void redirect(const std::string& location);
     private:
         Connection(const Connection& src);
         Connection& operator=(const Connection& src);

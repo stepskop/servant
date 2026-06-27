@@ -67,6 +67,35 @@ bool safe_atol(const std::string &s, long &out) {
     return true;
 }
 
+// Lexically collapse "." and ".." segments of an absolute URL path.
+// Pure string work — no FS access, so symlinks/missing files don't matter.
+// Returns false if a ".." would pop above root (e.g. "/../etc/passwd").
+bool normalize_path(const std::string &path, std::string &out) {
+    std::vector<std::string> stack;
+    std::vector<std::string> segments = split(path, "/");
+
+    for (size_t i = 0; i < segments.size(); ++i) {
+        const std::string &seg = segments[i];
+        if (seg.empty() || seg == ".")
+            continue; // collapse "//" and "/./"
+        if (seg == "..") {
+            if (stack.empty()) return false; // escapes above root
+            stack.pop_back();
+            continue;
+        }
+        stack.push_back(seg);
+    }
+
+    out = "/";
+    for (size_t i = 0; i < stack.size(); ++i) {
+        out += stack[i];
+        if (i + 1 < stack.size()) out += "/";
+    }
+    // Preserve a trailing slash so directory targets still resolve to index.
+    if (!stack.empty() && path[path.size() - 1] == '/') out += "/";
+    return true;
+}
+
 // Strip leading/trailing OWS (space + horizontal tab).
 std::string trim(const std::string& s) {
     const std::string ows = " \t";
