@@ -1,4 +1,5 @@
 -Iinclude
+-Itests
 -std=c++98
 -Wall
 -Wextra

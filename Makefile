@@ -36,7 +36,10 @@ SRCS         = $(addprefix $(CONFIG_DIR),   $(CONFIG_SRC))   \
 INCLUDE_DIR  = ./include/
 HEADERS      = -I$(INCLUDE_DIR)
 # Every object depends on the headers: edit a .hpp and its dependents rebuild.
-INCLUDES     = $(wildcard $(INCLUDE_DIR)*.hpp)
+# Listed explicitly (no wildcard) — add new headers here.
+HDR          = Connection.hpp EventLoop.hpp Listener.hpp Logger.hpp \
+               Request.hpp Response.hpp Status.hpp Utils.hpp
+INCLUDES     = $(addprefix $(INCLUDE_DIR), $(HDR))
 
 # ----- Objects (mirror the src/ tree into build/) --------------------------- #
 OBJ_DIR      = ./build/
@@ -53,6 +56,8 @@ $(OBJ_DIR)%.o: $(SRC_DIR)%.cpp $(INCLUDES)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(HEADERS) -c $< -o $@
 
+# Tests live under tests/ with their own Makefile (the dir may be gitignored):
+#   make -C tests        # unit + integration + leaks
 clean:
 	rm -rf $(OBJ_DIR)
 
