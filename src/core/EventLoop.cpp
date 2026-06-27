@@ -100,6 +100,9 @@ void EventLoop::handle_read(Connection *connection) {
     if (connection->state == READING_HEADERS) {
         if (pos == std::string::npos) { // If no header found.
             if (connection->in_buf.length() < MAX_HEADER_SIZE) return; // Can read more.
+            // Early reject while client may still be sending ->
+            // close() with unread data sends RST, client may lose this 400.
+            // Fix: Use shutdown() after this, and recv() until depleted.
             return connection->respond(400); // Cannot read more.
         }
 
@@ -135,6 +138,12 @@ void EventLoop::handle_read(Connection *connection) {
     if (connection->state == READING_BODY) {
         if (connection->in_buf.size() < connection->req.body_size) return; // Need to read more;
         connection->req.body.swap(connection->in_buf);
+
+        // If body is bigger = there is more some tail (maybe a new request piped)
+        if (connection->req.body.size() > connection->req.body_size) {
+            // Copy the tail.
+            connection->in_buf.assign(connection->req.body, connection->req.body_size, std::string::npos);
+        }
         connection->req.body.resize(connection->req.body_size);
 
         // TEMP: Just return recieved body.
@@ -215,16 +224,16 @@ int EventLoop::run() {
             Connection *conn = connections[polled.fd];
 
             // Else -> Is connection FD.
-            if (polled.revents & POLLHUP) {
-                Logger::debug(with_fd(polled.fd, "Peer hung up. Closing."));
-                this->close_connection(conn);
-            } else if (polled.revents & (POLLERR|POLLNVAL)) {
+            if (polled.revents & (POLLERR|POLLNVAL)) {
                 Logger::error(with_fd(polled.fd, "Socket error. Closing."));
                 this->close_connection(conn);
             } else if (polled.revents & POLLIN) {
                 handle_read(conn);
             } else if (polled.revents & POLLOUT) {
                 handle_write(conn);
+            } else if (polled.revents & POLLHUP) {
+                Logger::debug(with_fd(polled.fd, "Peer hung up. Closing."));
+                this->close_connection(conn);
             }
         }
     }
