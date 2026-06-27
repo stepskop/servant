@@ -1,6 +1,6 @@
 #include <arpa/inet.h>
 #include <signal.h>
-#include "../include/EventLoop.hpp"
+#include "EventLoop.hpp"
 
 int main() {
     // Ignore SIGPIPE. Piping to closed FD should not kill the server.

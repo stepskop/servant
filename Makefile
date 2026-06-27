@@ -10,7 +10,7 @@ CORE_DIR     = core/
 CORE_SRC     = Connection.cpp EventLoop.cpp Listener.cpp
 
 HTTP_DIR     = http/
-HTTP_SRC     =
+HTTP_SRC     = Request.cpp Response.cpp Status.cpp
 
 HANDLERS_DIR = handlers/
 HANDLERS_SRC =
@@ -47,7 +47,7 @@ all: $(NAME)
 
 $(NAME): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(NAME)
-	@echo "$(NAME) built."
+	@echo "Done."
 
 $(OBJ_DIR)%.o: $(SRC_DIR)%.cpp $(INCLUDES)
 	@mkdir -p $(dir $@)

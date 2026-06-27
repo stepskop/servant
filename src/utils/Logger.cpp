@@ -1,6 +1,5 @@
-#include "../../include/Logger.hpp"
+#include "Logger.hpp"
 
-#include <ctime>
 #include <iostream>
 #include <sstream>
 
