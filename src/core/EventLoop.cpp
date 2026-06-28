@@ -1,14 +1,8 @@
 #include "EventLoop.hpp"
 #include "Connection.hpp"
-#include "Request.hpp"
 #include "Logger.hpp"
-#include "Utils.hpp"
-#include "Mime.hpp"
-#include <cstddef>
-#include <stdint.h>
-#include <string>
+#include "StaticFileHandler.hpp"
 #include <map>
-#include <sys/fcntl.h>
 #include <utility>
 #include <poll.h>
 #include <vector>
@@ -16,8 +10,6 @@
 #include <sys/socket.h>
 #include <csignal>
 #include <cerrno>
-#include <sys/stat.h>
-#include <unistd.h>
 
 // Set by the signal handler, polled by the run loop for a clean shutdown.
 volatile sig_atomic_t g_stop = 0;
@@ -47,7 +39,7 @@ short resolve_poll_event(ConnectionState state) {
     }
 }
 
-void EventLoop::add_listener(in_addr_t host, uint16_t port) {
+void EventLoop::add_listener(const std::string& host, uint16_t port) {
     Listener *listener = new Listener(host, port);
 
     if (!listener->start()) {
@@ -96,126 +88,10 @@ void EventLoop::handle_read(Connection *connection) {
 
         return this->close_connection(connection);
     }
-    // Append new buffer;
-    connection->in_buf.append(buffer, recv_res);
-    std::string header_end = Str() << CRLF << CRLF;
-    size_t pos = connection->in_buf.find(header_end);
 
-    if (connection->state == READING_HEADERS) {
-        if (pos == std::string::npos) { // If no header found.
-            if (connection->in_buf.length() < MAX_HEADER_SIZE) return; // Can read more.
-            // Early reject while client may still be sending ->
-            // close() with unread data sends RST, client may lose this 400.
-            // Fix: Use shutdown() after this, and recv() until depleted.
-            return connection->respond(400); // Cannot read more.
-        }
-
-        std::string header_block = connection->in_buf.substr(0, pos);
-
-        int parse_res = parse_header(header_block, connection->req);
-
-        // If parsing doesn't end with 200. Return 400: Bad request.
-        if (parse_res != 200) return connection->respond(parse_res);
-
-        // TEMP: Reject chunked requests.
-        std::string transfer_encoding_raw = get_value(connection->req.headers, "transfer-encoding");
-        if (!transfer_encoding_raw.empty() && transfer_encoding_raw == "chunked") {
-            return connection->respond(501);
-        }
-
-        std::string content_length_raw = get_value(connection->req.headers, "content-length");
-
-        if (!content_length_raw.empty()) {
-            long content_length = 0;
-            if (!is_digits(content_length_raw) || !safe_atol(content_length_raw, content_length)) return connection->respond(400);
-            if (content_length > MAX_BODY_SIZE) return connection->respond(413); // Body is too big.
-            if (content_length != 0) {
-                // Remove header from the buffer.
-                connection->in_buf.erase(0, pos + header_end.size());
-                connection->req.body_size = content_length;
-                connection->state = READING_BODY;
-            }
-        }
-    }
-
-    if (connection->state == READING_BODY) {
-        if (connection->in_buf.size() < connection->req.body_size) return; // Need to read more;
-        connection->req.body.swap(connection->in_buf);
-
-        // If body is bigger = there is more some tail (maybe a new request piped)
-        if (connection->req.body.size() > connection->req.body_size) {
-            // Copy the tail.
-            connection->in_buf.assign(connection->req.body, connection->req.body_size, std::string::npos);
-        }
-        connection->req.body.resize(connection->req.body_size);
-    }
-
-    // TEMP: Reject requests that are not GET.
-    if (connection->req.method != "GET") return connection->respond(501);
-
-    // Collapse "." / ".." lexically and reject any target that escapes ROOT.
-    std::string safe_target;
-    if (!normalize_path(connection->req.target, safe_target)) {
-        Logger::warn(with_fd(connection->fd, Str() << "Path traversal blocked: " << connection->req.target));
-        return connection->respond(403);
-    }
-
-    std::string file_path = Str() << ROOT << safe_target;
-
-    Logger::debug(Str() << "Stating the file: " << file_path);
-    struct stat sb;
-    int stat_res = stat(file_path.c_str(), &sb);
-    if (stat_res == -1) {
-        Logger::error(with_fd(connection->fd, Str() << "Couldn't stat() the file: " << file_path));
-        return connection->respond(404);
-    }
-
-    int stat_mode = sb.st_mode & S_IFMT;
-    if (stat_mode != S_IFREG && stat_mode != S_IFDIR) {
-        Logger::warn(with_fd(connection->fd, Str() << file_path << " is not a file or dir. Stat mode: " << (sb.st_mode & S_IFMT)));
-        return connection->respond(403);
-    }
-
-    // TEMP: Autoindex from wish -> If dir append default file.
-    if (stat_mode == S_IFDIR) {
-        // No trailing slash -> 301 to "/sub/" so relative URLs resolve right.
-        if (safe_target[safe_target.size() - 1] != '/') {
-            return connection->redirect(safe_target + "/");
-        }
-        file_path.append(DEFAULT_FILE);
-
-        // Re-stat it.
-        int stat_res = stat(file_path.c_str(), &sb);
-        if (stat_res == -1) {
-            Logger::error(with_fd(connection->fd, Str() << "Couldn't stat() the file: " << file_path));
-            return connection->respond(404);
-        }
-    }
-
-    Logger::debug(Str() << "Opening the file: " << file_path);
-    int file_fd = open(file_path.c_str(), O_RDONLY); // TODO: Make this not leak.
-    if (file_fd == -1) {
-        Logger::error(with_fd(connection->fd, Str() << "Couldn't open() the file: " << file_path));
-        return connection->respond(403);
-    }
-
-    std::string content;
-    char read_buf[8192];
-    off_t total = 0;
-    while (total < sb.st_size) {
-        ssize_t n = read(file_fd, read_buf, sizeof(read_buf));
-        if (n < 0) {
-            Logger::error(with_fd(connection->fd, Str() << with_fd(file_fd, "Reading file failed.")));
-            close(file_fd);
-            return connection->respond(500);
-        }
-        if (n == 0) break;
-        content.append(read_buf, n);
-        total += n;
-    }
-
-    close(file_fd);
-    return connection->respond(200, content, get_mime_type(file_path));
+    // Frame the request; serve only once a full request is buffered.
+    bool can_serve = connection->consume(buffer, recv_res);
+    if (can_serve) serve_static(*connection);
 }
 
 void EventLoop::handle_write(Connection *connection) {
@@ -227,13 +103,13 @@ void EventLoop::handle_write(Connection *connection) {
         if (send_res == -1) Logger::error(with_fd(connection->fd, "Error during while writing to the socket."));
         if (send_res == 0) Logger::warn(with_fd(connection->fd, "No bytes were sent."));
 
-        return this->close_connection(connection);;
+        return this->close_connection(connection);
     }
     connection->sent += send_res;
 
     if (connection->sent == connection->out_buf.size()) {
         // TODO: If keep-alive -> reset to READING_HEADERS
-        return this->close_connection(connection);;
+        return this->close_connection(connection);
     }
 }
 

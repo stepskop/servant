@@ -2,20 +2,18 @@
 # define LISTENER_HPP
 
 #include <stdint.h>
-#include <arpa/inet.h>
-
-# define ROOT "./www"
-# define DEFAULT_FILE "index.html"
+#include <string>
 
 class Listener {
     public:
-        sockaddr_in address;
         int fd;
-        uint16_t port;
 
-        Listener(in_addr_t host, uint16_t port);
+        Listener(const std::string& host, uint16_t port);
         ~Listener();
         int start();
+    private:
+        std::string host;
+        uint16_t port;
 };
 
 #endif

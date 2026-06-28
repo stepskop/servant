@@ -28,6 +28,9 @@ class Connection {
         Request req;
         void respond(size_t status, const std::string& body = "", const std::string& content_type = "text/html");
         void redirect(const std::string& location);
+        // Append freshly-received bytes and advance the request framing state machine.
+        // When a full request is buffered returns true meaning that the request can be handled.
+        bool consume(const char* data, size_t len);
     private:
         Connection(const Connection& src);
         Connection& operator=(const Connection& src);

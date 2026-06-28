@@ -13,7 +13,7 @@ HTTP_DIR     = http/
 HTTP_SRC     = Request.cpp Response.cpp Status.cpp Mime.cpp
 
 HANDLERS_DIR = handlers/
-HANDLERS_SRC =
+HANDLERS_SRC = StaticFileHandler.cpp
 
 CGI_DIR      = cgi/
 CGI_SRC      =
@@ -38,7 +38,8 @@ HEADERS      = -I$(INCLUDE_DIR)
 # Every object depends on the headers: edit a .hpp and its dependents rebuild.
 # Listed explicitly (no wildcard) — add new headers here.
 HDR          = Connection.hpp EventLoop.hpp Listener.hpp Logger.hpp \
-               Request.hpp Response.hpp Status.hpp Utils.hpp Mime.hpp
+               Request.hpp Response.hpp Status.hpp Utils.hpp Mime.hpp \
+               StaticFileHandler.hpp
 INCLUDES     = $(addprefix $(INCLUDE_DIR), $(HDR))
 
 # ----- Objects (mirror the src/ tree into build/) --------------------------- #
