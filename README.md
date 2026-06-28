@@ -26,12 +26,16 @@ make            # build ./webserv
 
 ```mermaid
 flowchart TD
-    client([client]) --> accept["Listener::accept()"]
-    accept --> conn["new Connection<br/>(one per client fd)"]
-    conn --> poll{"EventLoop::run()<br/>poll() over every fd"}
+    boot["main()<br/>add_listener(host, port)"] --> listen["Listener::start()<br/>socket + bind() + listen()"]
+    listen --> poll
 
-    poll -- POLLIN --> read["handle_read<br/>recv() once"]
-    poll -- POLLOUT --> write["handle_write<br/>send() drains out_buf"]
+    poll{"EventLoop::run()<br/>poll() over every fd"}
+
+    poll -- "listener POLLIN" --> accept["accept_connection<br/>accept() + new Connection"]
+    accept --> poll
+
+    poll -- "client POLLIN" --> read["handle_read<br/>recv() once"]
+    poll -- "client POLLOUT" --> write["handle_write<br/>send() drains out_buf"]
 
     read --> consume["Connection::consume<br/>frame the request"]
     consume -- "incomplete" --> poll
