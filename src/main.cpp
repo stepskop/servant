@@ -6,7 +6,7 @@ int main() {
     signal(SIGPIPE, SIG_IGN);
 
     EventLoop loop;
-    loop.add_listener("0.0.0.0", 8080);
+    loop.add_listener("0.0.0.0", "8080");
 
     return loop.run();
 }

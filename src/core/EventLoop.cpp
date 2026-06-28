@@ -39,7 +39,7 @@ short resolve_poll_event(ConnectionState state) {
     }
 }
 
-void EventLoop::add_listener(const std::string& host, uint16_t port) {
+void EventLoop::add_listener(const std::string& host, const std::string& port) {
     Listener *listener = new Listener(host, port);
 
     if (!listener->start()) {

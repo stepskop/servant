@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <cstring>
 
-Listener::Listener(const std::string& host, uint16_t port): fd(-1), host(host), port(port) {}
+Listener::Listener(const std::string& host, const std::string& port): fd(-1), host(host), port(port) {}
 
 Listener::~Listener() {
     if (this->fd != -1) close(this->fd);
@@ -21,10 +21,8 @@ int Listener::start() {
     hints.ai_socktype = SOCK_STREAM; // TCP.
     hints.ai_flags = AI_PASSIVE;     // For binding a server socket.
 
-    std::string port_str = Str() << this->port;
-
     struct addrinfo *res = NULL;
-    if (getaddrinfo(this->host.c_str(), port_str.c_str(), &hints, &res)) {
+    if (getaddrinfo(this->host.c_str(), this->port.c_str(), &hints, &res)) {
         Logger::error("getaddrinfo failed.");
         return 0;
     }
