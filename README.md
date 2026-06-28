@@ -21,8 +21,7 @@ make            # build ./webserv
 ./webserv       # listens on 0.0.0.0:8080, serves files from ./www
 ```
 
-
-## Request lifecycle
+## Lifecycle
 
 ```mermaid
 flowchart TD
@@ -92,7 +91,6 @@ src/
     Utils.cpp         Str builder, split/trim, safe_atol, header lookup
 www/                document root served by default (.gitignored, you need to create it)
 tools/linux-build/  Docker wrapper to build/test on Linux from macOS
-tests/              unit + integration tests (own Makefile; gitignored)
 ```
 
 ## Components
