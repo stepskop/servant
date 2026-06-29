@@ -1,5 +1,6 @@
 #include <signal.h>
 #include <iostream>
+#include <vector>
 #include "Banner.hpp"
 #include "Config.hpp"
 #include "EventLoop.hpp"
@@ -17,8 +18,12 @@ static Config default_config() {
     return config;
 }
 
-int main() {
+int main(int argc, char** argv) {
     std::cout << SERVANT_BANNER << std::endl;
+
+    if (argc == 2) {
+        load_config(argv[1]);
+    }
 
     // Ignore SIGPIPE. Piping to closed FD should not kill the server.
     signal(SIGPIPE, SIG_IGN);

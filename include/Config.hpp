@@ -8,6 +8,19 @@
 # include <utility>
 # include <cstddef>
 
+enum ConfigTokenType {
+  WORD,
+  BLOCK_START,
+  BLOCK_END,
+  TERMINATOR,
+};
+
+typedef struct {
+    ConfigTokenType type;
+    std::string value;
+    size_t line;
+} ConfigToken;
+
 // Parsed, validated configuration model (spec B.3). Phase 3 populates the whole
 // model but acts only on `listen` and the default server's
 // root/index/client_max_body_size/error_pages. The rest is consumed by the
@@ -49,5 +62,7 @@ struct ServerConfig {
 struct Config {
     std::vector<ServerConfig> servers;
 };
+
+int load_config(const std::string &path);
 
 #endif
