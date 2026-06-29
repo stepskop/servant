@@ -7,7 +7,7 @@
 #include <unistd.h>
 #include <cstring>
 
-Listener::Listener(const std::string& host, const std::string& port): fd(-1), host(host), port(port) {}
+Listener::Listener(const ServerConfig* server): fd(-1), server(server), host(server->host), port(server->port) {}
 
 Listener::~Listener() {
     if (this->fd != -1) close(this->fd);

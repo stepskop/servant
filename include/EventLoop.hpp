@@ -15,7 +15,7 @@ class EventLoop {
         void handle_write(Connection *);
     public:
         ~EventLoop();
-        void add_listener(const std::string& host, const std::string& port);
+        void add_listener(const ServerConfig* server);
         int run();
 };
 

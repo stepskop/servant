@@ -4,7 +4,7 @@ CXX         = c++
 CXXFLAGS    = -Wall -Wextra -Werror -std=c++98 -g
 
 CONFIG_DIR   = config/
-CONFIG_SRC   =
+CONFIG_SRC   = Config.cpp
 
 CORE_DIR     = core/
 CORE_SRC     = Connection.cpp EventLoop.cpp Listener.cpp
@@ -37,7 +37,7 @@ INCLUDE_DIR  = ./include/
 HEADERS      = -I$(INCLUDE_DIR)
 # Every object depends on the headers: edit a .hpp and its dependents rebuild.
 # Listed explicitly (no wildcard) — add new headers here.
-HDR          = Connection.hpp EventLoop.hpp Listener.hpp Logger.hpp \
+HDR          = Config.hpp Connection.hpp EventLoop.hpp Listener.hpp Logger.hpp \
                Request.hpp Response.hpp Status.hpp Utils.hpp Mime.hpp \
                StaticFileHandler.hpp
 INCLUDES     = $(addprefix $(INCLUDE_DIR), $(HDR))

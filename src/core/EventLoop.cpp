@@ -39,8 +39,8 @@ short resolve_poll_event(ConnectionState state) {
     }
 }
 
-void EventLoop::add_listener(const std::string& host, const std::string& port) {
-    Listener *listener = new Listener(host, port);
+void EventLoop::add_listener(const ServerConfig* server) {
+    Listener *listener = new Listener(server);
 
     if (!listener->start()) {
         Logger::error("Listener didn't start");
@@ -65,7 +65,7 @@ void EventLoop::accept_connection(Listener *from) {
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
 
     // Store the new connection.
-    std::pair<int, Connection*> new_connection = std::make_pair(client_fd, new Connection(client_fd));
+    std::pair<int, Connection*> new_connection = std::make_pair(client_fd, new Connection(client_fd, from->server));
     this->connections.insert(new_connection);
 
     Logger::debug(with_fd(client_fd, "Connection accepted."));

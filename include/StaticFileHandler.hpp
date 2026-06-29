@@ -3,11 +3,9 @@
 
 # include "Connection.hpp"
 
-# define ROOT "./www"
-# define DEFAULT_FILE "index.html"
-
-// Resolve conn.req against ROOT and serve a static file (or a directory's
-// default file), writing the result via conn.respond() / conn.redirect().
+// Resolve conn.req against the connection's server root and serve a static file
+// (or a directory's index file), writing the result via
+// conn.respond() / conn.redirect().
 void serve_static(Connection& conn);
 
 #endif

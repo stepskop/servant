@@ -37,14 +37,14 @@ void serve_static(Connection& conn) {
     // TEMP: Reject requests that are not GET.
     if (req.method != "GET") return conn.respond(501);
 
-    // Collapse "." / ".." lexically and reject any target that escapes ROOT.
+    // Collapse "." / ".." lexically and reject any target that escapes root.
     std::string safe_target;
     if (!normalize_path(req.target, safe_target)) {
         Logger::warn(with_fd(conn.fd, Str() << "Path traversal blocked: " << req.target));
         return conn.respond(403);
     }
 
-    std::string file_path = Str() << ROOT << safe_target;
+    std::string file_path = Str() << conn.server->root << safe_target;
 
     Logger::debug(Str() << "Stating the file: " << file_path);
     struct stat sb;
@@ -59,13 +59,13 @@ void serve_static(Connection& conn) {
         return conn.respond(403);
     }
 
-    // TEMP: Autoindex from wish -> If dir append default file.
+    // TEMP: Autoindex from wish -> If dir append index file.
     if (stat_mode == S_IFDIR) {
         // No trailing slash -> 301 to "/sub/" so relative URLs resolve right.
         if (safe_target[safe_target.size() - 1] != '/') {
             return conn.redirect(safe_target + "/");
         }
-        file_path.append(DEFAULT_FILE);
+        file_path.append(conn.server->index);
 
         // Re-stat it.
         if (stat(file_path.c_str(), &sb) == -1) {

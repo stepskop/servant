@@ -4,9 +4,9 @@
 #include <cstddef>
 # include <string>
 # include "Request.hpp"
+# include "Config.hpp"
 
 # define MAX_HEADER_SIZE 8192 // 8 KB
-# define MAX_BODY_SIZE 10240000 // 10 MB
 
 enum ConnectionState {
   READING_HEADERS,
@@ -19,8 +19,12 @@ enum ConnectionState {
 class Connection {
     public:
         ~Connection();
-        Connection(int fd);
+        Connection(int fd, const ServerConfig* server);
         int fd;
+        // Default server for the listener this connection arrived on. Phase 4
+        // refines per-request via Host header; for now it drives root/index/
+        // client_max_body_size.
+        const ServerConfig* server;
         ConnectionState state;
         std::string in_buf;
         std::string out_buf;

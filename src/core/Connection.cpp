@@ -1,10 +1,11 @@
 #include "Connection.hpp"
 #include "Response.hpp"
 #include "Request.hpp"
+#include "Config.hpp"
 #include "Utils.hpp"
 #include <unistd.h>
 
-Connection::Connection(int fd): fd(fd), state(READING_HEADERS), in_buf(""), out_buf(""), sent(0) {}
+Connection::Connection(int fd, const ServerConfig* server): fd(fd), server(server), state(READING_HEADERS), in_buf(""), out_buf(""), sent(0) {}
 Connection::~Connection() {
     close(this->fd);
 }
@@ -53,7 +54,7 @@ bool Connection::consume(const char* data, size_t len) {
         if (!content_length_raw.empty()) {
             long content_length = 0;
             if (!is_digits(content_length_raw) || !safe_atol(content_length_raw, content_length)) return (this->respond(400), false);
-            if (content_length > MAX_BODY_SIZE) return (this->respond(413), false); // Body is too big.
+            if (static_cast<size_t>(content_length) > this->server->client_max_body_size) return (this->respond(413), false); // Body is too big.
             if (content_length != 0) {
                 // Remove header from the buffer.
                 this->in_buf.erase(0, pos + header_end.size());
