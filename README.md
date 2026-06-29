@@ -5,7 +5,7 @@
     </picture>
 
 # servant
-A HTTP/1.1 server written in C++.
+A HTTP server written in C++.
 
 A single thread serves many clients at once: every socket is non-blocking and
 multiplexed through one `poll()` loop. No thread per connection, no blocking I/O.
