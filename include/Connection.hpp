@@ -30,6 +30,7 @@ class Connection {
         std::string out_buf;
         size_t sent;
         Request req;
+        size_t res_status;
         void respond(size_t status, const std::string& body = "", const std::string& content_type = "text/html");
         void redirect(const std::string& location);
         // Append freshly-received bytes and advance the request framing state machine.

@@ -6,7 +6,7 @@
 #include <utility>
 #include <vector>
 
-Request::Request(): body_size(0) {}
+Request::Request(): body_size(0), initialized(false) {}
 
 int parse_header(const std::string &block, Request &req) {
     std::vector<std::string> lines = split(block, CRLF);
@@ -86,6 +86,8 @@ int parse_header(const std::string &block, Request &req) {
         Logger::debug("Missing required Host header");
         return 400;
     }
+
+    req.initialized = true;
 
     return 200;
 }

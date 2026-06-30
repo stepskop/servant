@@ -14,6 +14,7 @@ class Request {
         std::map<std::string, std::string> headers; // lowercased names
         std::string body;
         size_t body_size;
+        bool initialized;
 };
 
 int parse_header(const std::string &block, Request &req);

@@ -11,6 +11,7 @@ Connection::~Connection() {
 }
 
 void Connection::respond(size_t status, const std::string& body, const std::string& content_type) {
+    this->res_status = status;
     this->out_buf.append(build_response(status, body, content_type));
     this->sent = 0;
     this->state = WRITING;
