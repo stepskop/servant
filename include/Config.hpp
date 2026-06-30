@@ -63,6 +63,27 @@ struct Config {
     std::vector<ServerConfig> servers;
 };
 
-int load_config(const std::string &path);
+// Read cursor over a token stream. Centralizes the bounds check so the parser
+// never indexes past the end: every read goes through peek/advance/expect.
+// The expect_* methods throw std::runtime_error on a type mismatch or EOF.
+class Cursor {
+    const std::vector<ConfigToken> &tokens;
+    size_t                          pos;
+
+public:
+    explicit Cursor(const std::vector<ConfigToken> &tokens);
+
+    bool                at_end() const;
+    const ConfigToken  &peek() const;                  // guard with !at_end()
+    bool                is(ConfigTokenType type) const;
+    bool                is_word(const char *keyword) const;
+
+    const ConfigToken  &advance();                     // guard with !at_end()
+    size_t              expect(ConfigTokenType type);  // returns consumed line
+    std::string         expect_word();
+    void                expect_keyword(const char *keyword);
+};
+
+int load_config(const std::string &path, Config &config);
 
 #endif

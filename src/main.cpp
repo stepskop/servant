@@ -4,33 +4,29 @@
 #include "Banner.hpp"
 #include "Config.hpp"
 #include "EventLoop.hpp"
-
-// TEMP: hardcoded config until the parser lands.
-static Config default_config() {
-    ServerConfig server;
-    server.host = "0.0.0.0";
-    server.port = "8080";
-    server.root = "./www";
-    server.index = "index.html";
-
-    Config config;
-    config.servers.push_back(server);
-    return config;
-}
+#include "Logger.hpp"
 
 int main(int argc, char** argv) {
+    Config config;
+
+    std::string config_path = "./default.conf";
+    if (argc == 2) {
+        config_path = argv[1];
+    }
+
+    if (load_config(config_path, config) == -1) {
+        Logger::error("Usage ./webserv <config file>");
+        return 1;
+    };
+
     std::cout << SERVANT_BANNER << std::endl;
 
-    if (argc == 2) {
-        load_config(argv[1]);
-    }
+    if (argc != 2) {
+        Logger::warn("Using default config");
+    };
 
     // Ignore SIGPIPE. Piping to closed FD should not kill the server.
     signal(SIGPIPE, SIG_IGN);
-
-    // `config` must outlive the loop: listeners/connections hold ServerConfig*
-    // into config.servers, which is stable as long as the vector isn't grown.
-    Config config = default_config();
 
     EventLoop loop;
 

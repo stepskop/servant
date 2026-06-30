@@ -1,7 +1,10 @@
 #include "EventLoop.hpp"
 #include "Connection.hpp"
 #include "Logger.hpp"
+#include "Request.hpp"
 #include "StaticFileHandler.hpp"
+#include "Utils.hpp"
+#include <cstddef>
 #include <map>
 #include <utility>
 #include <poll.h>
@@ -91,14 +94,25 @@ void EventLoop::handle_read(Connection *connection) {
 
     // Frame the request; serve only once a full request is buffered.
     bool can_serve = connection->consume(buffer, recv_res);
-    if (can_serve) serve_static(*connection);
+    if (!can_serve) return;
+
+    serve_static(*connection);
 }
 
 void EventLoop::handle_write(Connection *connection) {
     int fd = connection->fd;
 
-    Logger::debug(with_fd(connection->fd, "Sending data."));
-    int send_res = send(fd, connection->out_buf.data() + connection->sent, connection->out_buf.size() - connection->sent, 0);
+    if (connection->req.initialized) {
+        // If the incoming request was successfuly parsed, we can log some details.
+        Request req = connection->req;
+        Logger::info(with_fd(connection->fd, Str() << req.method << " " << req.target << " " << req.version << " " << connection->res_status));
+    } else {
+        Logger::info(with_fd(connection->fd, Str() << "Malformed request " << connection->res_status ));
+    }
+
+    size_t to_send = connection->out_buf.size() - connection->sent;
+    Logger::debug(with_fd(connection->fd, Str() << "Sending data. Size: " << to_send));
+    int send_res = send(fd, connection->out_buf.data() + connection->sent, to_send, 0);
     if (send_res <= 0) {
         if (send_res == -1) Logger::error(with_fd(connection->fd, "Error during while writing to the socket."));
         if (send_res == 0) Logger::warn(with_fd(connection->fd, "No bytes were sent."));
