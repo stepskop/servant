@@ -12,7 +12,7 @@
 int main(int argc, char** argv) {
     if (argc > 2) {
         Logger::error("Usage: ./webserv [config file]");
-        return -1;
+        return 1;
     }
 
     Config config;
@@ -23,7 +23,7 @@ int main(int argc, char** argv) {
 
     if (load_config(config_path, config) == -1) {
         Logger::error(std::string("Failed to load config: ") + config_path);
-        return -1;
+        return 1;
     }
 
     std::cout << SERVANT_BANNER << std::endl;
