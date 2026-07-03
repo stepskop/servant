@@ -57,6 +57,6 @@ int Listener::start() {
         return 0;
     }
 
-    Logger::info(Str() << "Listening on " << this->host << ":" << this->port);
+    Logger::info(with_fd(this->fd, Str() << "Listening on " << this->host << ":" << this->port));
     return 1;
 }
