@@ -128,6 +128,10 @@ void EventLoop::handle_write(Connection *connection) {
 }
 
 int EventLoop::run() {
+    if (this->listeners.size() <= 0) {
+        Logger::error("No listeners to start with");
+        return 1;
+    }
     // Catch SIGINT/SIGTERM so poll() returns with EINTR and the loop exits cleanly.
     // No SA_RESTART -> poll is interrupted instead of auto-restarted.
     signal(SIGINT, on_stop_signal);
