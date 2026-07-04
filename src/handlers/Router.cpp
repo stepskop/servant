@@ -1,0 +1,96 @@
+#include "Router.hpp"
+#include "Config.hpp"
+#include "Connection.hpp"
+#include "Request.hpp"
+#include "StaticFileHandler.hpp"
+#include "Utils.hpp"
+
+static const ServerConfig* select_server(const std::vector<const ServerConfig*> &server_group , const std::string &host) {
+    for (size_t i = 0; i < server_group.size(); i++) {
+        // Strip port - example.com:80 -> example.com
+        std::string host_without_port = host.substr(0, host.find(':'));
+
+        // Host header should be case-insensitive, so convert to lowercase for comparison.
+        for (size_t i = 0; i < host_without_port.size(); ++i) {
+            host_without_port[i] = std::tolower(static_cast<unsigned char>(host_without_port[i]));
+        }
+
+        if (server_group[i]->server_names.count(host_without_port)) return server_group[i];
+    }
+    return server_group[0]; // Fall back to first
+}
+
+// A path location matches a target only on a segment boundary: "/up" must
+// not match "/uploads", while "/uploads" matches "/uploads" and "/uploads/x".
+// A trailing slash on the configured path is ignored ("/uploads/" == "/uploads").
+static bool location_matches(const std::string &path, const std::string &target) {
+    // Root matches anything
+    if (path == "/") return true;
+
+    // Require the target to start with the path.
+    if (target.compare(0, path.size(), path) != 0) return false;
+
+    // Path matches; require a segment boundary so "/up" won't match "/uploads".
+    // So we we can consider path as matched when either:
+    // 1. The target ends at the path ("/uploads" matches "/uploads")
+    // 2. The target continues with a slash ("/uploads/x" matches "/uploads)
+    bool ends_at_target = target.size() == path.size();
+    bool ends_at_segment = target.size() > path.size() && target[path.size()] == '/';
+
+    return ends_at_target || ends_at_segment;
+}
+
+static const LocationConfig* select_location(const ServerConfig &server, const std::string &target) {
+    const LocationConfig *best_match = NULL;
+    size_t best_length = 0;
+
+    for (size_t i = 0; i < server.locations.size(); i++) {
+        const LocationConfig &location = server.locations[i];
+
+        std::string path = location.path;
+        // Drop trailing slash. /uploads and /uploads/ are equivalent.
+        if (path.size() > 1 && path[path.size() - 1] == '/') {
+            path.erase(path.size() - 1);
+        }
+
+        if (location_matches(path, target) && path.size() > best_length) {
+            best_length = path.size();
+            best_match = &location;
+        }
+    }
+
+    return best_match;
+}
+
+static bool is_method_allowed(const LocationConfig &location, const std::string &method) {
+    return location.methods.count(method) > 0;
+}
+
+void resolve(Connection &conn) {
+    std::string host = get_value(conn.req.headers, "host");
+    conn.server = select_server(*conn.server_group, host);
+    conn.location = select_location(*conn.server, conn.req.target);
+}
+
+void route(Connection &conn) {
+    Request &req = conn.req;
+
+    if (!is_method_allowed(*conn.location, req.method)) {
+        // TODO: a 405 must carry `Allow: <allowed methods>` (graded against
+        // nginx). Blocked on a richer Response API that can attach arbitrary
+        // headers — the methods come from conn.location->methods.
+        return conn.respond(405);
+    }
+
+    // Handle redirection if configured in the location.
+    if (conn.location->redirect.first != 0) {
+        return conn.redirect(conn.location->redirect.first, conn.location->redirect.second);
+    }
+
+    // Select the appropriate handler based on the request method and location configuration.
+    if (req.method == "GET") {
+        return serve_static(conn);
+    } else {
+        return conn.respond(501);
+    }
+}

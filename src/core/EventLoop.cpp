@@ -2,7 +2,7 @@
 #include "Connection.hpp"
 #include "Logger.hpp"
 #include "Request.hpp"
-#include "StaticFileHandler.hpp"
+#include "Router.hpp"
 #include "Utils.hpp"
 #include <cstddef>
 #include <map>
@@ -42,8 +42,8 @@ short resolve_poll_event(ConnectionState state) {
     }
 }
 
-void EventLoop::add_listener(const ServerConfig* server) {
-    Listener *listener = new Listener(server);
+void EventLoop::add_listener(std::vector<const ServerConfig*> &server_group) {
+    Listener *listener = new Listener(server_group);
 
     if (!listener->start()) {
         Logger::error("Listener didn't start");
@@ -68,7 +68,7 @@ void EventLoop::accept_connection(Listener *from) {
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
 
     // Store the new connection.
-    std::pair<int, Connection*> new_connection = std::make_pair(client_fd, new Connection(client_fd, from->server));
+    std::pair<int, Connection*> new_connection = std::make_pair(client_fd, new Connection(client_fd, &from->server_group));
     this->connections.insert(new_connection);
 
     Logger::debug(with_fd(client_fd, "Connection accepted."));
@@ -81,7 +81,7 @@ void EventLoop::close_connection(Connection *connection) {
 }
 
 void EventLoop::handle_read(Connection *connection) {
-    char buffer[4096];
+    char buffer[READ_BUFFER_SIZE];
     int fd = connection->fd;
 
     int recv_res = recv(fd, buffer, sizeof(buffer), 0);
@@ -96,7 +96,7 @@ void EventLoop::handle_read(Connection *connection) {
     bool can_serve = connection->consume(buffer, recv_res);
     if (!can_serve) return;
 
-    serve_static(*connection);
+    route(*connection);
 }
 
 void EventLoop::handle_write(Connection *connection) {

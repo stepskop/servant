@@ -9,9 +9,10 @@ class Listener {
         int fd;
         // Default server for this host:port. Stamped onto every connection
         // accepted here (Phase 4 refines per-request via the Host header).
-        const ServerConfig* server;
+        std::vector<const ServerConfig*> &server_group;
+        const ServerConfig* &server;
 
-        Listener(const ServerConfig* server);
+        Listener(std::vector<const ServerConfig*> &servers);
         ~Listener();
         int start();
     private:

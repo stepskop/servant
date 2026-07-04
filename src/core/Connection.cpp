@@ -2,10 +2,19 @@
 #include "Response.hpp"
 #include "Request.hpp"
 #include "Config.hpp"
+#include "Router.hpp"
 #include "Utils.hpp"
+#include <cstddef>
 #include <unistd.h>
 
-Connection::Connection(int fd, const ServerConfig* server): fd(fd), server(server), state(READING_HEADERS), in_buf(""), out_buf(""), sent(0) {}
+Connection::Connection(int fd, const std::vector<const ServerConfig*> *server_group)
+    :   fd(fd),
+        server((*server_group)[0]),
+        location(NULL),
+        server_group(server_group),
+        state(READING_HEADERS),
+        sent(0) {}
+
 Connection::~Connection() {
     close(this->fd);
 }
@@ -17,8 +26,8 @@ void Connection::respond(size_t status, const std::string& body, const std::stri
     this->state = WRITING;
 }
 
-void Connection::redirect(const std::string& location) {
-    this->out_buf.append(build_redirect(location));
+void Connection::redirect(size_t status, const std::string& location) {
+    this->out_buf.append(build_redirect(status, location));
     this->sent = 0;
     this->state = WRITING;
 }
@@ -52,10 +61,14 @@ bool Connection::consume(const char* data, size_t len) {
 
         std::string content_length_raw = get_value(this->req.headers, "content-length");
 
+        // Resolve the server and location for this request.
+        // This is done after parsing the headers to ensure that the Host header is available for server selection.
+        resolve(*this);
+
         if (!content_length_raw.empty()) {
             long content_length = 0;
             if (!is_digits(content_length_raw) || !safe_atol(content_length_raw, content_length)) return (this->respond(400), false);
-            if (static_cast<size_t>(content_length) > this->server->client_max_body_size) return (this->respond(413), false); // Body is too big.
+            if (static_cast<size_t>(content_length) > this->location->client_max_body_size) return (this->respond(413), false); // Body is too big.
             if (content_length != 0) {
                 // Remove header from the buffer.
                 this->in_buf.erase(0, pos + header_end.size());

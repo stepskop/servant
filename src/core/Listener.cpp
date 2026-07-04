@@ -7,7 +7,10 @@
 #include <unistd.h>
 #include <cstring>
 
-Listener::Listener(const ServerConfig* server): fd(-1), server(server), host(server->host), port(server->port) {}
+Listener::Listener(std::vector<const ServerConfig *> &server_group): fd(-1), server_group(server_group), server(server_group[0]) {
+    this->host = server_group[0]->host;
+    this->port = server_group[0]->port;
+}
 
 Listener::~Listener() {
     if (this->fd != -1) close(this->fd);

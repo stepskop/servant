@@ -125,6 +125,13 @@ static LocationConfig resolve_location(const RawLocationConfig &raw, const Serve
         loc.redirect = std::make_pair(static_cast<int>(code), raw.redirect_target);
     }
 
+    // If the location has no root and the server has no root, that's an error.
+    // The server's root is inherited if the location doesn't define one, so this check is only needed if both are empty.
+    // Throws only when realy needed -> the location has no root and the location has no redirect (which would make the root irrelevant).
+    if (loc.root.empty() && loc.redirect.first == 0) {
+       throw std::runtime_error(Str() << "location " << raw.path << " has no root and the server declares none to inherit");
+    }
+
     return loc;
 }
 
@@ -134,15 +141,27 @@ static ServerConfig resolve_server(const RawServerConfig &raw) {
     resolve_listen(raw.listen, server);
 
     server.server_names = raw.server_names;
-    server.root  = raw.root;                                     // may stay empty (Phase 4 default)
-    server.index = raw.index.empty() ? "index.html" : raw.index;
-    server.client_max_body_size = raw.client_max_body_size.empty()
-        ? DEFAULT_MAX_BODY_SIZE
-        : to_bytes(raw.client_max_body_size);
+    server.root  = raw.root;
+    server.index = !raw.index.empty() // may stay empty (Phase 4 default)
+        ? raw.index
+        : "index.html";
+    server.client_max_body_size = !raw.client_max_body_size.empty()
+        ? to_bytes(raw.client_max_body_size)
+        : DEFAULT_MAX_BODY_SIZE;
     resolve_error_pages(raw.error_pages, server.error_pages);
 
+    bool has_root = false;
     for (size_t i = 0; i < raw.locations.size(); i++) {
         server.locations.push_back(resolve_location(raw.locations[i], server));
+        if (server.locations.back().path == "/") has_root = true;
+    }
+
+    // Guarantee a catch-all "/" location so every request resolves to one and
+    // select_location never returns NULL. Inherits server root/index, GET-only.
+    if (!has_root) {
+        RawLocationConfig raw_root;
+        raw_root.path = "/";
+        server.locations.push_back(resolve_location(raw_root, server));
     }
 
     return server;

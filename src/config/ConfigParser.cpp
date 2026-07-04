@@ -92,7 +92,7 @@ static RawServerConfig parse_server(Cursor &cursor) {
         } else if (keyword == "server_name") {
             cursor.advance();
             while (cursor.is(WORD)) {
-                server.server_names.push_back(cursor.advance().value);
+                server.server_names.insert(cursor.advance().value);
             }
             cursor.expect(TERMINATOR);
         } else if (keyword == "root") {

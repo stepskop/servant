@@ -32,7 +32,7 @@ struct RawLocationConfig {
 
 struct RawServerConfig {
     std::string                    listen;
-    std::vector<std::string>       server_names;
+    std::set<std::string>          server_names;
     std::string                    root;
     std::string                    index;
     std::string                    client_max_body_size;
@@ -63,7 +63,7 @@ struct LocationConfig {
 struct ServerConfig {
     std::string                 host;        // e.g. 0.0.0.0
     std::string                 port;        // kept as string for getaddrinfo
-    std::vector<std::string>    server_names;
+    std::set<std::string>       server_names;
     std::size_t                 client_max_body_size;
     std::string                 root;
     std::string                 index;

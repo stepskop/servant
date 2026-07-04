@@ -11,7 +11,7 @@ enum LogLevel {
 };
 
 #ifndef LOG_LEVEL
-# define LOG_LEVEL INFO
+# define LOG_LEVEL DEBUG
 #endif
 
 class Logger {

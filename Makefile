@@ -13,7 +13,7 @@ HTTP_DIR     = http/
 HTTP_SRC     = Request.cpp Response.cpp Status.cpp Mime.cpp
 
 HANDLERS_DIR = handlers/
-HANDLERS_SRC = StaticFileHandler.cpp
+HANDLERS_SRC = Router.cpp StaticFileHandler.cpp
 
 CGI_DIR      = cgi/
 CGI_SRC      =

@@ -7,6 +7,7 @@
 # include "Config.hpp"
 
 # define MAX_HEADER_SIZE 8192 // 8 KB
+# define READ_BUFFER_SIZE 8192 // 8 KB
 
 enum ConnectionState {
   READING_HEADERS,
@@ -19,12 +20,14 @@ enum ConnectionState {
 class Connection {
     public:
         ~Connection();
-        Connection(int fd, const ServerConfig* server);
+        Connection(int fd, const std::vector<const ServerConfig*>* server_group);
         int fd;
         // Default server for the listener this connection arrived on. Phase 4
         // refines per-request via Host header; for now it drives root/index/
         // client_max_body_size.
-        const ServerConfig* server;
+        const ServerConfig *server;
+        const LocationConfig *location;
+        const std::vector<const ServerConfig*> *server_group;
         ConnectionState state;
         std::string in_buf;
         std::string out_buf;
@@ -32,7 +35,7 @@ class Connection {
         Request req;
         size_t res_status;
         void respond(size_t status, const std::string& body = "", const std::string& content_type = "text/html");
-        void redirect(const std::string& location);
+        void redirect(size_t status, const std::string& location);
         // Append freshly-received bytes and advance the request framing state machine.
         // When a full request is buffered returns true meaning that the request can be handled.
         bool consume(const char* data, size_t len);

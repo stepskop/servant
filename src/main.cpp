@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
     signal(SIGPIPE, SIG_IGN);
 
     // Map keyed by "host:port", value is vector of servers - first is default (added as listener), rest are "virtual hosts".
-    typedef std::map<std::string, std::vector<ServerConfig*> > ServerMap;
+    typedef std::map<std::string, std::vector<const ServerConfig*> > ServerMap;
 
     ServerMap servers;
     for (size_t i = 0; i < config.servers.size(); i++) {
@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
     EventLoop loop;
     // Register listeners for default host of each server.
     for (ServerMap::iterator it = servers.begin(); it != servers.end(); ++it) {
-        loop.add_listener(it->second[0]);
+        loop.add_listener(it->second);
     }
 
     return loop.run();

@@ -1,6 +1,7 @@
 #include "Response.hpp"
 #include "Status.hpp"
 #include "Utils.hpp"
+#include <cstddef>
 #include <string>
 #include <sstream>
 
@@ -29,9 +30,9 @@ std::string build_response(size_t status, std::string body_str, std::string cont
 
 // 301 with a Location header — used to append the trailing slash on a
 // directory request so relative URLs in the served page resolve correctly.
-std::string build_redirect(const std::string& location) {
+std::string build_redirect(size_t status, const std::string& location) {
     std::stringstream response;
-    response << "HTTP/1.1 301 " << get_status_string(301) << CRLF;
+    response << "HTTP/1.1 " << status << " " << get_status_string(status) << CRLF;
     response << "Connection: close" << CRLF;
     response << "Location: " << location << CRLF;
     response << "Content-Length: 0" << CRLF;
