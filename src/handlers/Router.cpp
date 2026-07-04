@@ -87,6 +87,8 @@ void route(Connection &conn) {
         return conn.redirect(conn.location->redirect.first, conn.location->redirect.second);
     }
 
+    conn.state = PROCESSING;
+
     // Select the appropriate handler based on the request method and location configuration.
     if (req.method == "GET") {
         return serve_static(conn);
