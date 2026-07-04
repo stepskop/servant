@@ -174,5 +174,9 @@ void upload_file(Connection &conn) {
 
     Logger::info(with_fd(conn.fd, Str() << "Uploaded " << content.size() << " bytes to " << file_path));
 
-    return conn.send(Response(201));
+    // 201 must point at the created resource. Mirror the on-disk layout back
+    // onto the URL space: <location prefix><subdir>/<filename> — the same path a
+    // subsequent GET or DELETE resolves to.
+    std::string resource_url = Str() << conn.location->path << subdir << "/" << filename;
+    return conn.send(Response(201).header("Location", resource_url));
 }
