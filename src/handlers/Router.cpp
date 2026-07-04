@@ -2,7 +2,7 @@
 #include "Config.hpp"
 #include "Connection.hpp"
 #include "Request.hpp"
-#include "StaticFileHandler.hpp"
+#include "Handler.hpp"
 #include "Utils.hpp"
 
 static const ServerConfig* select_server(const std::vector<const ServerConfig*> &server_group , const std::string &host) {
@@ -95,6 +95,10 @@ void route(Connection &conn) {
     // Select the appropriate handler based on the request method and location configuration.
     if (req.method == "GET") {
         return serve_static(conn);
+    } else if (req.method == "POST") {
+        return upload_file(conn);
+    } else if (req.method == "DELETE") {
+        return delete_file(conn);
     } else {
         return conn.send(Response(501));
     }

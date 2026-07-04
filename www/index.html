@@ -12,7 +12,7 @@
 	<p>web by <code id="text">servant</code></p>
 	<!--<p>Source: <a href="https://github.com/stepskop/servant">github.com/stepskop/servant</a></p>-->
 	<script>
-		fetch("/ascii-art.txt")
+		fetch("/uploads/ascii-art.txt")
 			.then(function (r) { return r.text(); })
 			.then(function (t) { document.getElementById("art").textContent = t; })
 			.catch(function () { document.getElementById("art").textContent = ":("; });

@@ -13,7 +13,7 @@ HTTP_DIR     = http/
 HTTP_SRC     = Request.cpp Response.cpp Status.cpp Mime.cpp
 
 HANDLERS_DIR = handlers/
-HANDLERS_SRC = Router.cpp StaticFileHandler.cpp
+HANDLERS_SRC = Router.cpp StaticFileHandler.cpp UploadHandler.cpp DeleteHandler.cpp
 
 CGI_DIR      = cgi/
 CGI_SRC      =
@@ -39,7 +39,7 @@ HEADERS      = -I$(INCLUDE_DIR)
 # Listed explicitly (no wildcard) — add new headers here.
 HDR          = Config.hpp ConfigParser.hpp ConfigResolver.hpp Connection.hpp EventLoop.hpp Listener.hpp Logger.hpp \
                Request.hpp Response.hpp Status.hpp Utils.hpp Mime.hpp \
-               StaticFileHandler.hpp
+               Handler.hpp
 INCLUDES     = $(addprefix $(INCLUDE_DIR), $(HDR))
 
 # ----- Objects (mirror the src/ tree into build/) --------------------------- #

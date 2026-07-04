@@ -1,8 +1,8 @@
-#include "StaticFileHandler.hpp"
 #include "Request.hpp"
 #include "Logger.hpp"
 #include "Utils.hpp"
 #include "Mime.hpp"
+#include "Connection.hpp"
 #include <cstddef>
 #include <sys/stat.h>
 #include <dirent.h>
