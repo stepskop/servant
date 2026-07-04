@@ -1,42 +1,44 @@
 #include "Response.hpp"
 #include "Status.hpp"
 #include "Utils.hpp"
-#include <cstddef>
-#include <string>
 #include <sstream>
 
-std::string build_response(size_t status, std::string body_str, std::string content_type) {
-
-    std::stringstream response;
-    response << "HTTP/1.1 " << status << " " << get_status_string(status) << CRLF;
-    response << "Connection: close" << CRLF;
-
-    // Provide default error page when no body defined.
-    if (status >= 400 && body_str.empty()) {
-        body_str = Str() << "<p>Unlucko. I have only <strong>" << status << "</strong> :( </p>";
-    }
-
-    size_t body_size = body_str.size();
-    response << "Content-Length: " << body_size << CRLF;
-    response << "Content-Type: " << content_type << CRLF;
-    response << CRLF;
-
-    if (body_size != 0) {
-        response << body_str;
-    }
-
-    return response.str();
+Response::Response(size_t status) : status(status) {
+    this->headers["Content-Type"] = "text/html";
 }
 
-// 301 with a Location header — used to append the trailing slash on a
-// directory request so relative URLs in the served page resolve correctly.
-std::string build_redirect(size_t status, const std::string& location) {
+Response& Response::body(const std::string& content) {
+    this->body_str = content;
+    return *this;
+}
+
+Response& Response::header(const std::string& key, const std::string& value) {
+    this->headers[key] = value;
+    return *this;
+}
+
+size_t Response::get_status() const {
+    return this->status;
+}
+
+std::string Response::serialize() const {
+    std::string out_body = this->body_str;
+
+    // Provide default error page when no body defined.
+    if (this->status >= 400 && out_body.empty()) {
+        out_body = Str() << "<p>Unlucko. I have only <strong>" << this->status << "</strong> :( </p>";
+    }
+
     std::stringstream response;
-    response << "HTTP/1.1 " << status << " " << get_status_string(status) << CRLF;
+    response << "HTTP/1.1 " << this->status << " " << get_status_string(this->status) << CRLF;
     response << "Connection: close" << CRLF;
-    response << "Location: " << location << CRLF;
-    response << "Content-Length: 0" << CRLF;
+    response << "Content-Length: " << out_body.size() << CRLF;
+
+    for (std::map<std::string, std::string>::const_iterator it = this->headers.begin(); it != this->headers.end(); ++it) {
+        response << it->first << ": " << it->second << CRLF;
+    }
     response << CRLF;
+    response << out_body;
 
     return response.str();
 }

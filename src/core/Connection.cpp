@@ -19,15 +19,9 @@ Connection::~Connection() {
     close(this->fd);
 }
 
-void Connection::respond(size_t status, const std::string& body, const std::string& content_type) {
-    this->res_status = status;
-    this->out_buf.append(build_response(status, body, content_type));
-    this->sent = 0;
-    this->state = WRITING;
-}
-
-void Connection::redirect(size_t status, const std::string& location) {
-    this->out_buf.append(build_redirect(status, location));
+void Connection::send(const Response& res) {
+    this->res_status = res.get_status();
+    this->out_buf.append(res.serialize());
     this->sent = 0;
     this->state = WRITING;
 }
@@ -43,7 +37,7 @@ bool Connection::consume(const char* data, size_t len) {
             // Early reject while client may still be sending ->
             // close() with unread data sends RST, client may lose this 400.
             // Fix: Use shutdown() after this, and recv() until depleted.
-            return (this->respond(400), false); // Cannot read more.
+            return (this->send(Response(400)), false); // Cannot read more.
         }
 
         std::string header_block = this->in_buf.substr(0, pos);
@@ -51,12 +45,12 @@ bool Connection::consume(const char* data, size_t len) {
         int parse_res = parse_header(header_block, this->req);
 
         // If parsing doesn't end with 200. Return 400: Bad request.
-        if (parse_res != 200) return (this->respond(parse_res), false);
+        if (parse_res != 200) return (this->send(Response(parse_res)), false);
 
         // TEMP: Reject chunked requests.
         std::string transfer_encoding_raw = get_value(this->req.headers, "transfer-encoding");
         if (!transfer_encoding_raw.empty() && transfer_encoding_raw == "chunked") {
-            return (this->respond(501), false);
+            return (this->send(Response(501)), false);
         }
 
         std::string content_length_raw = get_value(this->req.headers, "content-length");
@@ -67,8 +61,8 @@ bool Connection::consume(const char* data, size_t len) {
 
         if (!content_length_raw.empty()) {
             long content_length = 0;
-            if (!is_digits(content_length_raw) || !safe_atol(content_length_raw, content_length)) return (this->respond(400), false);
-            if (static_cast<size_t>(content_length) > this->location->client_max_body_size) return (this->respond(413), false); // Body is too big.
+            if (!is_digits(content_length_raw) || !safe_atol(content_length_raw, content_length)) return (this->send(Response(400)), false);
+            if (static_cast<size_t>(content_length) > this->location->client_max_body_size) return (this->send(Response(413)), false); // Body is too big.
             if (content_length != 0) {
                 // Remove header from the buffer.
                 this->in_buf.erase(0, pos + header_end.size());

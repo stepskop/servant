@@ -88,10 +88,10 @@ static void serve_file(Connection& conn, const std::string& file_path, off_t fil
     int status = read_file(file_path, file_size, content);
     if (status != 200) {
         Logger::error(with_fd(conn.fd, Str() << "Couldn't serve the file: " << file_path));
-        return conn.respond(status);
+        return conn.send(Response(status));
     }
 
-    return conn.respond(200, content, get_mime_type(file_path));
+    return conn.send(Response(200).header("Content-Type", get_mime_type(file_path)).body(content));
 }
 
 // Handle a directory request: redirect a missing trailing slash, serve the
@@ -99,7 +99,7 @@ static void serve_file(Connection& conn, const std::string& file_path, off_t fil
 static void serve_directory(Connection& conn, const std::string& target, const std::string& dir_path) {
     // No trailing slash -> 301 to "/sub/" so relative URLs resolve right.
     if (target[target.size() - 1] != '/') {
-        return conn.redirect(301, target + "/");
+        return conn.send(Response(301).header("Location", target + "/"));
     }
 
     // Try the index file first; serve it if present.
@@ -112,16 +112,16 @@ static void serve_directory(Connection& conn, const std::string& target, const s
 
     // If no index file, check autoindex config. If off, respond 403.
     if (!conn.location->autoindex) {
-        return conn.respond(403);
+        return conn.send(Response(403));
     }
 
     // Autoindex is on, so build a directory listing and respond with it.
     std::string listing;
     if (!build_autoindex(dir_path, target, listing)) {
-        return conn.respond(403);
+        return conn.send(Response(403));
     }
 
-    return conn.respond(200, listing);
+    return conn.send(Response(200).body(listing));
 }
 
 void serve_static(Connection& conn) {
@@ -131,7 +131,7 @@ void serve_static(Connection& conn) {
     std::string safe_target;
     if (!normalize_path(req.target, safe_target)) {
         Logger::warn(with_fd(conn.fd, Str() << "Path traversal blocked: " << req.target));
-        return conn.respond(403);
+        return conn.send(Response(403));
     }
 
     // Build the full path to the requested file.
@@ -143,14 +143,14 @@ void serve_static(Connection& conn) {
     // If stat() fails, the file doesn't exist or is inaccessible -> 404.
     if (stat(file_path.c_str(), &stat_buf) == -1) {
         Logger::error(with_fd(conn.fd, Str() << "Couldn't stat() the file: " << file_path));
-        return conn.respond(404);
+        return conn.send(Response(404));
     }
 
     // Check if the path is a regular file or directory. If not, respond 403.
     int stat_mode = stat_buf.st_mode & S_IFMT;
     if (stat_mode != S_IFREG && stat_mode != S_IFDIR) {
         Logger::warn(with_fd(conn.fd, Str() << file_path << " is not a file or dir. Stat mode: " << stat_mode));
-        return conn.respond(403);
+        return conn.send(Response(403));
     }
 
     // If it's a directory, handle it according to the location config.

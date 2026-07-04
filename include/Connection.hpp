@@ -5,6 +5,7 @@
 # include <string>
 # include "Request.hpp"
 # include "Config.hpp"
+# include "Response.hpp"
 
 # define MAX_HEADER_SIZE 8192 // 8 KB
 # define READ_BUFFER_SIZE 8192 // 8 KB
@@ -34,8 +35,7 @@ class Connection {
         size_t sent;
         Request req;
         size_t res_status;
-        void respond(size_t status, const std::string& body = "", const std::string& content_type = "text/html");
-        void redirect(size_t status, const std::string& location);
+        void send(const Response& res);
         // Append freshly-received bytes and advance the request framing state machine.
         // When a full request is buffered returns true meaning that the request can be handled.
         bool consume(const char* data, size_t len);

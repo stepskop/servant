@@ -76,15 +76,18 @@ void route(Connection &conn) {
     Request &req = conn.req;
 
     if (!is_method_allowed(*conn.location, req.method)) {
-        // TODO: a 405 must carry `Allow: <allowed methods>` (graded against
-        // nginx). Blocked on a richer Response API that can attach arbitrary
-        // headers — the methods come from conn.location->methods.
-        return conn.respond(405);
+        // A 405 must carry `Allow: <allowed methods>`.
+        std::string allow;
+        for (std::set<std::string>::const_iterator it = conn.location->methods.begin(); it != conn.location->methods.end(); ++it) {
+            if (!allow.empty()) allow += ", ";
+            allow += *it;
+        }
+        return conn.send(Response(405).header("Allow", allow));
     }
 
     // Handle redirection if configured in the location.
     if (conn.location->redirect.first != 0) {
-        return conn.redirect(conn.location->redirect.first, conn.location->redirect.second);
+        return conn.send(Response(conn.location->redirect.first).header("Location", conn.location->redirect.second));
     }
 
     conn.state = PROCESSING;
@@ -93,6 +96,6 @@ void route(Connection &conn) {
     if (req.method == "GET") {
         return serve_static(conn);
     } else {
-        return conn.respond(501);
+        return conn.send(Response(501));
     }
 }
