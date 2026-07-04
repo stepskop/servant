@@ -4,52 +4,7 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>servant</title>
-	<style>
-		body {
-			font-family: system-ui, sans-serif;
-			display: flex;
-			flex-direction: column;
-			align-items: center;
-			justify-content: center;
-			min-height: 100vh;
-			margin: 0;
-			background: #141414;
-			color: #b8332a;
-		}
-		h1 {
-			font-size: 3rem;
-			margin: 0 0 0.5rem;
-			color: #af3b33;
-			letter-spacing: 0.1em;
-			display: flex;
-			align-items: center;
-			gap: 0.5rem;
-		}
-		.online {
-			width: 0.6em;
-			height: 0.6em;
-			border-radius: 50%;
-			background: #4a7c50;
-			animation: blink 2s ease-in-out infinite;
-			margin-right: 16px;
-		}
-		@keyframes blink {
-			0%, 100% { opacity: 1; }
-			50% { opacity: 0.35; }
-		}
-		p { color: #8a8a8a; margin: 0 0 1.5rem;}
-		a { color: #b8332a; text-decoration: none; }
-		a:hover { color: #d4af37; }
-		code { background: #1f1f1f; color: #b8332a; padding: 2px 6px; border-radius: 4px; }
-		pre {
-			font-family: ui-monospace, monospace;
-			font-size: 0.5rem;
-			line-height: 1;
-			color: #d4af37;
-			margin: 0 0 1.5rem;
-			filter: drop-shadow(0 0 8px rgba(212, 175, 55, 0.3));
-		}
-	</style>
+	<link rel="stylesheet" href="/style.css">
 </head>
 <body>
 	<h1><span class="online"></span>Serving...</h1>

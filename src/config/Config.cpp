@@ -2,19 +2,16 @@
 #include "ConfigParser.hpp"
 #include "ConfigResolver.hpp"
 #include "Logger.hpp"
-#include <fstream>
+#include "Utils.hpp"
 #include <sstream>
 #include <string>
 #include <vector>
 
 int load_config(const std::string &path, Config &config) {
-    std::ifstream file(path.c_str());
-    if (!file.is_open()) return -1;
+    std::string source;
+    if (read_file(path, source) != 200) return -1;
 
-    std::ostringstream buffer;
-    buffer << file.rdbuf();
-
-    std::vector<ConfigToken> tokens = tokenize(buffer.str());
+    std::vector<ConfigToken> tokens = tokenize(source);
     inspect_tokens(tokens);
 
     try {

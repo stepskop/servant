@@ -1,4 +1,5 @@
 #include "Connection.hpp"
+#include "Mime.hpp"
 #include "Response.hpp"
 #include "Request.hpp"
 #include "Config.hpp"
@@ -19,8 +20,21 @@ Connection::~Connection() {
     close(this->fd);
 }
 
-void Connection::send(const Response& res) {
-    this->res_status = res.get_status();
+void Connection::send(Response res) {
+    size_t status = res.get_status();
+
+    // If the response is an error and has no body, try to serve a custom error page if configured.
+    if (status >= 400 && !res.has_body() && this->location) {
+        std::map<int, std::string>::const_iterator it = this->location->error_pages.find(status);
+        if (it != this->location->error_pages.end()) {
+            std::string body;
+            std::string path = this->location->root + it->second;
+            if (read_file(path, body) == 200) {
+                res.header("Content-Type", get_mime_type(path)).body(body);
+            }
+        }
+    }
+    this->res_status = status;
     this->out_buf.append(res.serialize());
     this->sent = 0;
     this->state = WRITING;

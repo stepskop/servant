@@ -35,7 +35,7 @@ class Connection {
         size_t sent;
         Request req;
         size_t res_status;
-        void send(const Response& res);
+        void send(Response res);
         // Append freshly-received bytes and advance the request framing state machine.
         // When a full request is buffered returns true meaning that the request can be handled.
         bool consume(const char* data, size_t len);

@@ -21,6 +21,10 @@ size_t Response::get_status() const {
     return this->status;
 }
 
+bool Response::has_body() const {
+    return !this->body_str.empty();
+}
+
 std::string Response::serialize() const {
     std::string out_body = this->body_str;
 

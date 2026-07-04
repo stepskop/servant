@@ -1,8 +1,24 @@
 #include "Utils.hpp"
 #include <string>
 #include <sstream>
+#include <fstream>
 #include <map>
 #include <climits>
+
+// Read the whole file at `path` into `out`. Returns 200 on success, 403 if it
+// can't be opened, 500 on a read error mid-stream. Opened in binary mode so
+// served bytes (images, etc.) are not mangled.
+int read_file(const std::string &path, std::string &out) {
+    std::ifstream file(path.c_str(), std::ios::binary);
+    if (!file.is_open()) return 403;
+
+    std::ostringstream buffer;
+    buffer << file.rdbuf();
+    if (file.bad()) return 500;
+
+    out = buffer.str();
+    return 200;
+}
 
 Str::operator std::string() const {
     return ss.str();

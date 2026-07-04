@@ -4,34 +4,8 @@
 #include "Utils.hpp"
 #include "Mime.hpp"
 #include <cstddef>
-#include <fcntl.h>
-#include <unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
-
-// Read the whole regular file at `path` into `out`. Always closes the fd, so
-// no descriptor leaks on any return path. Returns the status to respond with:
-// 200 on success, 403 if open() fails, 500 if read() fails mid-file.
-static int read_file(const std::string& path, off_t size, std::string& out) {
-    int fd = open(path.c_str(), O_RDONLY);
-    if (fd == -1) return 403;
-
-    char buf[8192];
-    off_t total = 0;
-    while (total < size) {
-        ssize_t n = read(fd, buf, sizeof(buf));
-        if (n < 0) {
-            close(fd);
-            return 500;
-        }
-        if (n == 0) break;
-        out.append(buf, n);
-        total += n;
-    }
-
-    close(fd);
-    return 200;
-}
 
 // Escape HTML metacharacters so filenames/paths can't inject markup into the
 // autoindex page. '&' first, or we'd double-escape the entities below.
@@ -82,10 +56,10 @@ static bool build_autoindex(const std::string& dir_path, const std::string& uri,
 
 // Read the regular file at `file_path` and respond with it, mapping any
 // read_file failure to the matching error status.
-static void serve_file(Connection& conn, const std::string& file_path, off_t file_size) {
+static void serve_file(Connection& conn, const std::string& file_path) {
     Logger::debug(Str() << "Opening the file: " << file_path);
     std::string content;
-    int status = read_file(file_path, file_size, content);
+    int status = read_file(file_path, content);
     if (status != 200) {
         Logger::error(with_fd(conn.fd, Str() << "Couldn't serve the file: " << file_path));
         return conn.send(Response(status));
@@ -107,7 +81,7 @@ static void serve_directory(Connection& conn, const std::string& target, const s
     Logger::debug(Str() << "Stating the index file: " << conn.location->index);
     struct stat index_stat_buf;
     if (!conn.location->index.empty() && stat(index_path.c_str(), &index_stat_buf) == 0 && S_ISREG(index_stat_buf.st_mode)) {
-        return serve_file(conn, index_path, index_stat_buf.st_size);
+        return serve_file(conn, index_path);
     }
 
     // If no index file, check autoindex config. If off, respond 403.
@@ -159,5 +133,5 @@ void serve_static(Connection& conn) {
     }
 
     // It's a regular file, so serve it.
-    return serve_file(conn, file_path, stat_buf.st_size);
+    return serve_file(conn, file_path);
 }

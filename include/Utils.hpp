@@ -24,5 +24,8 @@ bool safe_atol(const std::string &s, long &out);
 // Lexically collapse "." and ".." in an absolute URL path.
 // Returns false if a ".." escapes above root (traversal attempt).
 bool normalize_path(const std::string &path, std::string &out);
+// Read the whole regular file at `path` into `out`. Returns 200 on success,
+// 403 if it can't be opened, 500 on a read error mid-file.
+int read_file(const std::string &path, std::string &out);
 
 #endif
