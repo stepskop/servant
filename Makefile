@@ -1,7 +1,7 @@
 NAME        = webserv
 
 CXX         = c++
-CXXFLAGS    = -Wall -Wextra -Werror -std=c++98 -g
+CXXFLAGS    = -Wall -Wextra -Werror -std=c++98 -pedantic -pedantic-errors
 
 CONFIG_DIR   = config/
 CONFIG_SRC   = Config.cpp Tokenizer.cpp ConfigParser.cpp ConfigResolver.cpp
@@ -16,7 +16,7 @@ HANDLERS_DIR = handlers/
 HANDLERS_SRC = Router.cpp StaticFileHandler.cpp UploadHandler.cpp DeleteHandler.cpp
 
 CGI_DIR      = cgi/
-CGI_SRC      =
+CGI_SRC      = Cgi.cpp
 
 UTILS_DIR    = utils/
 UTILS_SRC    = Logger.cpp Utils.cpp
@@ -39,7 +39,7 @@ HEADERS      = -I$(INCLUDE_DIR)
 # Listed explicitly (no wildcard) — add new headers here.
 HDR          = Config.hpp ConfigParser.hpp ConfigResolver.hpp Connection.hpp EventLoop.hpp Listener.hpp Logger.hpp \
                Request.hpp Response.hpp Status.hpp Utils.hpp Mime.hpp \
-               Handler.hpp
+               Handler.hpp Cgi.hpp
 INCLUDES     = $(addprefix $(INCLUDE_DIR), $(HDR))
 
 # ----- Objects (mirror the src/ tree into build/) --------------------------- #

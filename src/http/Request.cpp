@@ -35,6 +35,13 @@ int parse_header(const std::string &block, Request &req) {
         req.query = target.substr(q + 1);
     }
 
+    std::string safe_target;
+    if (!normalize_path(req.target, safe_target)) {
+        Logger::debug(Str() << "Path traversal blocked: " << req.target);
+        return 403;
+    }
+    req.target = safe_target;
+
     // Version must match "HTTP/X.Y" shape (400), then be exactly HTTP/1.1 (else 505).
     std::string version = request_line[2];
     if (version.size() != 8 || version.compare(0, 5, "HTTP/") != 0

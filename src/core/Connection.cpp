@@ -14,10 +14,22 @@ Connection::Connection(int fd, const std::vector<const ServerConfig*> *server_gr
         location(NULL),
         server_group(server_group),
         state(READING_HEADERS),
-        sent(0) {}
+        sent(0),
+        res_status(0),
+        cgi(NULL) {}
 
 Connection::~Connection() {
+    this->teardown_cgi();
     close(this->fd);
+}
+
+void Connection::teardown_cgi() {
+    delete this->cgi;
+    this->cgi = NULL;
+}
+
+bool Connection::should_register_cgi() const {
+    return this->state == WAITING_CGI && this->cgi != NULL;
 }
 
 void Connection::send(Response res) {

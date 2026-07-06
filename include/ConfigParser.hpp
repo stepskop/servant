@@ -9,12 +9,7 @@
 // Config lexing + parsing surface: the token stream, the read cursor, and the
 // tokens -> raw-model build. The raw -> typed step lives in ConfigResolver.hpp.
 
-enum ConfigTokenType {
-  WORD,
-  BLOCK_START,
-  BLOCK_END,
-  TERMINATOR,
-};
+enum ConfigTokenType { WORD, BLOCK_START, BLOCK_END, TERMINATOR };
 
 typedef struct {
     ConfigTokenType type;

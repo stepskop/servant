@@ -44,19 +44,22 @@ flowchart TD
     consume -- "incomplete" --> poll
     consume -- "full request" --> resolve["resolve()<br/>select server + location"]
     resolve --> route["route()<br/>check method, select handler"]
-    route --> serve["handler<br/>serve_static / ..."]
+    route -- "static / upload / delete" --> serve["handler<br/>serve_static / upload / delete"]
+    route -- "CGI location" --> cgi["handle_cgi<br/>fork+execve, pipes into poll set<br/>state = WAITING_CGI"]
     serve --> respond["conn.send(Response)<br/>fill out_buf, state = WRITING"]
     respond --> poll
+
+    poll -- "cgi pipe POLLIN/POLLOUT" --> cgi
+    cgi -- "stdout EOF / timeout" --> respond
+    cgi -- "in flight" --> poll
 
     write -- "partial" --> poll
     write -- "fully sent" --> close["close connection"]
 ```
 
 A `Connection` is a small state machine driven by `EventLoop`:
-
-```
-READING_HEADERS ──► READING_BODY ──► PROCESSING ──► WRITING ──► CLOSING
-```
+`READING_HEADERS → READING_BODY → PROCESSING → WRITING → CLOSING`, with CGI
+requests detouring through `WAITING_CGI` between `PROCESSING` and `WRITING`.
 
 `resolve_poll_event()` maps the current state to the poll flags the loop should
 wait on (`POLLIN` while reading, `POLLOUT` while writing, nothing otherwise), so
@@ -79,8 +82,24 @@ It returns `true` only once a full request is framed and ready to serve.
 
 Once framed, `resolve()` selects the `ServerConfig` (by `Host` header among the
 listener's virtual hosts) and the longest-prefix `LocationConfig` for the
-target. `route()` then enforces the location's allowed methods (`405` with an
-`Allow` header), applies any configured redirect, and dispatches to a handler.
+target (matched on segment boundaries, trailing slash ignored). `route()` then:
+
+1. enforces the location's allowed methods (`405` with an `Allow` header),
+2. applies any configured `return` redirect (`301`/`302` with `Location`),
+3. if the location has a `cgi_extension` and the target's script segment ends
+   with it, dispatches to the CGI handler (see below),
+4. otherwise dispatches by method: `GET` → static serving, `POST` → upload,
+   `DELETE` → delete. Anything else → `501`.
+
+## CGI
+
+A request matching a CGI location runs a script through its `cgi_interpreter`
+via `fork()` + `execve()` without blocking the loop: the child's stdin/stdout
+pipes join the poll set, the request body is streamed in and the output read
+back until EOF, then the child is reaped with `waitpid(WNOHANG)`. Its output is
+split at the first blank line — CGI headers (incl. `Status:`/`Location:`) merge
+into the response, the rest is the body. A script that overruns its deadline is
+killed and answered `504`; other failures map to `404`/`403`/`500`/`502`.
 
 ## Responses
 
@@ -106,6 +125,7 @@ src/
   core/             the networking engine — sockets, polling, connections
   http/             the HTTP/1.1 protocol — parse requests, build responses
   handlers/         decide what a request does and produce its response
+  cgi/              fork/execve a CGI script and pump its pipes through poll
   config/           turn the config file into the server/location model
   utils/            shared helpers (logging, strings, paths, file reads)
 www/                example document root used by default.conf
@@ -121,19 +141,23 @@ tools/linux-build/  Docker wrapper to build/test on Linux from macOS
 | `Connection` | Per-client state: `fd`, in/out buffers, `state`, parsed `Request`, matched server/location. Frames requests via `consume()`, queues output via `send()`. |
 | `Request` | Parsed method, target, query, version, lowercased headers, body. |
 | `Response` | Chainable response builder (`status`, `.header()`, `.body()`); `serialize()` produces the wire form. |
-| `Config` | Parses the config file into `ServerConfig`/`LocationConfig` (root, index, methods, redirects, `client_max_body_size`, `error_page`, autoindex). |
-| `Router` | Selects the server (by `Host`) and longest-prefix location, enforces allowed methods, and dispatches to a handler. |
+| `Config` | Parses the config file into `ServerConfig`/`LocationConfig` (root, index, methods, redirects, `client_max_body_size`, `error_page`, autoindex, `cgi_extension`/`cgi_interpreter`) via a three-stage Tokenizer → parser → resolver pipeline. |
+| `Router` | Selects the server (by `Host`) and longest-prefix location, enforces allowed methods, applies redirects, detects CGI, and dispatches to a handler. |
 | `StaticFileHandler` | Serves a file under the matched location's `root`, using its `index` for directories, or an autoindex listing. |
+| `UploadHandler` | Handles `POST` — multipart and raw bodies → `201` with a `Location` for the created resource. |
+| `DeleteHandler` | Handles `DELETE` — `204`/`404`/`403`, traversal-guarded. |
+| `Cgi` / `CgiProcess` | Launches a CGI child (fork/execve), owns its pipe fds + pid + deadline, and parses its output into a `Response`. Pipes are driven by the poll loop; the child is reaped and killed-on-timeout. |
 | `Logger` / `Utils` | Logging and string/file helpers shared across the codebase. |
 
-## WIP Notes 
+## WIP Notes
 
 - `SIGPIPE` is ignored so a write to a closed socket fails the `send()` instead
   of killing the process.
-- `poll()` blocks indefinitely (`-1`); a signal interrupts it (`EINTR`) so the
-  loop can recheck the shutdown flag.
+- `poll()` blocks indefinitely (`-1`) when idle; while a CGI child is running the
+  timeout shrinks to its nearest deadline so a runaway script hits its `504`. A
+  signal interrupts `poll()` (`EINTR`) so the loop can recheck the shutdown flag.
+- `GET` (static + autoindex), `POST` (upload), and `DELETE` are all handled;
+  CGI runs through the poll loop. Chunked transfer-encoding is still rejected
+  with `501` (unchunking is the next piece).
 - Keep-alive is not yet wired up — every response carries `Connection: close`
   and the connection closes after one response.
-- `UploadHandler` and `DeleteHandler` are stubs; only `GET` (static serving) is
-  handled so far — other methods get `501`.
-- Chunked transfer-encoding is rejected with `501`.

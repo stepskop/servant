@@ -1,16 +1,21 @@
 #include "EventLoop.hpp"
+#include "Cgi.hpp"
 #include "Connection.hpp"
 #include "Logger.hpp"
 #include "Request.hpp"
+#include "Response.hpp"
 #include "Router.hpp"
 #include "Utils.hpp"
 #include <cstddef>
 #include <map>
+#include <sys/poll.h>
+#include <unistd.h>
 #include <utility>
 #include <poll.h>
 #include <vector>
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <csignal>
 #include <cerrno>
 
@@ -35,6 +40,7 @@ short resolve_poll_event(ConnectionState state) {
             return POLLIN;
         case WRITING:
             return POLLOUT;
+        case WAITING_CGI:
         case PROCESSING: // Building a response
         case CLOSING: // FD to be closed
         default:
@@ -66,6 +72,8 @@ void EventLoop::accept_connection(Listener *from) {
 
     // Set the new client connection to non-blocking mode.
     fcntl(client_fd, F_SETFL, O_NONBLOCK);
+    // Don't leak other clients' sockets into CGI children.
+    set_cloexec(client_fd);
 
     // Store the new connection.
     std::pair<int, Connection*> new_connection = std::make_pair(client_fd, new Connection(client_fd, &from->server_group));
@@ -76,6 +84,7 @@ void EventLoop::accept_connection(Listener *from) {
 
 void EventLoop::close_connection(Connection *connection) {
     Logger::debug(with_fd(connection->fd, "Closing the connection."));
+    this->unregister_cgi(connection); // Drop cgi fds before ~Connection frees them (avoids dangling cgi_fds keys).
     this->connections.erase(connection->fd);
     delete connection;
 }
@@ -97,6 +106,19 @@ void EventLoop::handle_read(Connection *connection) {
     if (!can_serve) return;
 
     route(*connection);
+
+    if (connection->should_register_cgi()) {
+        this->cgi_fds.insert(std::make_pair(connection->cgi->stdout_fd, connection));
+
+        if (!connection->cgi->in_buf.empty()) {
+            this->cgi_fds.insert(std::make_pair(connection->cgi->stdin_fd, connection));
+        } else {
+            // No body to feed -> close stdin now so the child sees EOF immediately
+            // instead of blocking on a read that never gets data.
+            close(connection->cgi->stdin_fd);
+            connection->cgi->stdin_fd = -1;
+        }
+    }
 }
 
 void EventLoop::handle_write(Connection *connection) {
@@ -124,6 +146,126 @@ void EventLoop::handle_write(Connection *connection) {
     if (connection->sent == connection->out_buf.size()) {
         // TODO: If keep-alive -> reset to READING_HEADERS
         return this->close_connection(connection);
+    }
+}
+
+void EventLoop::cgi_read(Connection *conn) {
+    CgiProcess *cgi_process = conn->cgi;
+    char buffer[READ_BUFFER_SIZE];
+
+    int n = read(cgi_process->stdout_fd, buffer, sizeof(buffer));
+
+    Logger::debug(with_fd(conn->fd, Str() << "Read " << n << " bytes from CGI process."));
+    // read() failed -> fail the CGI process and close the connection.
+    if (n < 0) return this->cgi_fail(conn);
+
+    // More output -> accumulate and wait for the next readable event.
+    if (n > 0) {
+        cgi_process->out_buf.append(buffer, n);
+        return;
+    }
+
+    // n == 0: child closed stdout (EOF). Output complete -> respond.
+    this->cgi_finish(conn);
+}
+
+void EventLoop::cgi_write(Connection *conn) {
+    CgiProcess *cgi_process = conn->cgi;
+    size_t left = cgi_process->in_buf.size() - cgi_process->in_sent;
+    int n = write(cgi_process->stdin_fd, cgi_process->in_buf.data() + cgi_process->in_sent, left);
+
+    // A write error here is almost always EPIPE: the script exited (or stopped
+    // reading) before draining the body.
+    // That is not a server failure -- the script may have already printed a valid response.
+    // Stop writing, close the pipe, and let stdout drive completion.
+    if (n < 0) return this->cgi_stop_writing(conn);
+    if (n == 0) return; // Nothing written -> wait for the next writable event.
+
+    cgi_process->in_sent += n;
+
+    // Body fully delivered
+    if (cgi_process->in_sent == cgi_process->in_buf.size())
+        this->cgi_stop_writing(conn);
+}
+
+// Close the CGI stdin pipe (child sees EOF) and stop polling it for writes.
+// Idempotent: safe whether the body was fully sent or a write hit EPIPE.
+void EventLoop::cgi_stop_writing(Connection *conn) {
+    CgiProcess *cgi_process = conn->cgi;
+    if (cgi_process->stdin_fd == -1) return;
+    close(cgi_process->stdin_fd);
+    cgi_fds.erase(cgi_process->stdin_fd);
+    cgi_process->stdin_fd = -1;
+}
+
+void EventLoop::unregister_cgi(Connection *conn) {
+    if (!conn->cgi) return;
+    cgi_fds.erase(conn->cgi->stdin_fd);
+    cgi_fds.erase(conn->cgi->stdout_fd);
+}
+
+void EventLoop::cgi_finish(Connection *conn) {
+    unregister_cgi(conn);
+
+    // Ask "has the child exited?" without blocking the event loop. We reach here
+    // on stdout EOF, so it has almost always already exited and WNOHANG returns
+    // its exit code. If it hasn't exited yet (returns 0), we still have all the
+    // output -- respond as success and LEAVE pid set so teardown_cgi() cleans up
+    // the process. Clearing pid here would leave the dead child hanging around.
+    int status = 0;
+    bool ok = true;
+    if (waitpid(conn->cgi->pid, &status, WNOHANG) == conn->cgi->pid) {
+        conn->cgi->pid = -1; // already cleaned up -> ~CgiProcess must not touch it again
+        ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
+    }
+
+    std::string raw = conn->cgi->out_buf;
+    conn->teardown_cgi();
+
+    // Nonzero exit / signal = upstream failure; otherwise parse the script's
+    // headers + body (honouring its Status:/Content-Type:/Location:).
+    conn->send(ok ? parse_cgi_output(raw) : Response(502));
+}
+
+void EventLoop::cgi_fail(Connection *conn) {
+    this->unregister_cgi(conn);
+
+    conn->teardown_cgi();
+    conn->send(Response(502));
+}
+
+// Smallest ms until any running CGI hits its deadline. -1 (block forever) when
+// none are running; 0 when one is already past due so poll() returns at once.
+int EventLoop::cgi_poll_timeout() {
+    int timeout = -1;
+    time_t now = time(NULL);
+
+    for (std::map<int, Connection*>::iterator it = this->connections.begin(); it != this->connections.end(); it++) {
+        const CgiProcess *cgi = it->second->cgi;
+        if (!cgi) continue;
+
+        long ms = (static_cast<long>(cgi->started) + CGI_TIMEOUT - now) * 1000;
+        if (ms < 0) ms = 0;
+        if (timeout == -1 || ms < timeout) timeout = static_cast<int>(ms);
+    }
+
+    return timeout;
+}
+
+void EventLoop::cleanup_cgi_timeouts() {
+    time_t now = time(NULL);
+
+    for (std::map<int, Connection*>::iterator it = this->connections.begin(); it != this->connections.end(); it++) {
+        Connection *conn = it->second;
+        if (!conn->cgi) continue;
+        if (now - conn->cgi->started < CGI_TIMEOUT) continue;
+
+        Logger::warn(with_fd(conn->fd, "CGI timed out. Killing."));
+
+        this->unregister_cgi(conn);
+        conn->teardown_cgi(); // SIGKILL + waitpid reaps the runaway child.
+
+        conn->send(Response(504));
     }
 }
 
@@ -158,9 +300,29 @@ int EventLoop::run() {
             fds.push_back(connection_pfd);
         }
 
-        // Poll the FDs.
+        // Push CGI pollable FDs.
+        for (std::map<int, Connection*>::iterator it = this->cgi_fds.begin(); it != this->cgi_fds.end(); it++) {
+            struct pollfd cgi_pfd;
+            cgi_pfd.fd = it->first;
+
+            const Connection *conn = it->second;
+
+            if (it->first == conn->cgi->stdin_fd) {
+                cgi_pfd.events = POLLOUT;
+            } else if (it->first == conn->cgi->stdout_fd) {
+                cgi_pfd.events = POLLIN;
+            } else {
+                Logger::error(with_fd(it->first, "FD is registered in cgi_fds but is neither stdin nor stdout of the CGI process."));
+                continue;
+            }
+
+            fds.push_back(cgi_pfd);
+        }
+
+        // Poll the FDs. Timeout is the nearest CGI deadline (-1 = block forever
+        // when no CGI is running), so a hung child is reaped promptly.
         Logger::debug("Polling.");
-        int ready_n = poll(&fds[0], fds.size(), -1); // -1 to make the poll timeout infinite
+        int ready_n = poll(&fds[0], fds.size(), this->cgi_poll_timeout());
         Logger::debug("Polled.");
         if (ready_n == -1) {
             if (errno == EINTR) continue; // Signal arrived -> recheck g_stop.
@@ -177,6 +339,18 @@ int EventLoop::run() {
                 continue;
             }
 
+            if (this->cgi_fds.count(polled.fd)) {
+                Connection *conn = this->cgi_fds[polled.fd];
+                if (polled.revents & (POLLIN|POLLHUP)) {
+                    this->cgi_read(conn);
+                } else if (polled.revents & POLLOUT) {
+                    this->cgi_write(conn);
+                } else if (polled.revents & (POLLERR|POLLNVAL)) {
+                    this->cgi_fail(conn);
+                }
+                continue;
+            }
+
             // No connection found with this FD;
             if (!connections.count(polled.fd)) {
                 Logger::error(with_fd(polled.fd, "Expected this FD to belong to a connection. This should not happen."));
@@ -189,14 +363,17 @@ int EventLoop::run() {
                 Logger::error(with_fd(polled.fd, "Socket error. Closing."));
                 this->close_connection(conn);
             } else if (polled.revents & POLLIN) {
-                handle_read(conn);
+                this->handle_read(conn);
             } else if (polled.revents & POLLOUT) {
-                handle_write(conn);
+                this->handle_write(conn);
             } else if (polled.revents & POLLHUP) {
                 Logger::debug(with_fd(polled.fd, "Peer hung up. Closing."));
                 this->close_connection(conn);
             }
         }
+
+        // Stop any CGI past its deadline (covers poll() waking purely on timeout).
+        this->cleanup_cgi_timeouts();
     }
 
     Logger::info("Shutdown signal received. Exiting.");

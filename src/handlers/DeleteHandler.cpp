@@ -10,14 +10,7 @@
 void delete_file(Connection& conn) {
     Request& req = conn.req;
 
-    // Collapse "." / ".." lexically and reject any target that escapes root.
-    std::string safe_target;
-    if (!normalize_path(req.target, safe_target)) {
-        Logger::warn(with_fd(conn.fd, Str() << "Path traversal blocked: " << req.target));
-        return conn.send(Response(403));
-    }
-
-    std::string file_path = Str() << conn.location->root << safe_target;
+    std::string file_path = Str() << conn.location->root << req.target;
 
     if (unlink(file_path.c_str()) == 0) {
         Logger::info(with_fd(conn.fd, Str() << "Deleted " << file_path));

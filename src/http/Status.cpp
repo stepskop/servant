@@ -17,6 +17,7 @@ std::string get_status_string(size_t status) {
         case 413: return "Content Too Large";
         case 500: return "Internal Server Error";
         case 501: return "Not Implemented";
+        case 502: return "Bad Gateway";
         case 505: return "HTTP Version Not Supported";
         default: return "Unknown";
     }

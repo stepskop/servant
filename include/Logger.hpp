@@ -3,12 +3,7 @@
 
 # include <string>
 
-enum LogLevel {
-    DEBUG,
-    INFO,
-    WARNING,
-    ERROR,
-};
+enum LogLevel { DEBUG, INFO, WARNING, ERROR };
 
 #ifndef LOG_LEVEL
 # define LOG_LEVEL DEBUG

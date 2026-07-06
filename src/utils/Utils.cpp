@@ -4,6 +4,7 @@
 #include <fstream>
 #include <map>
 #include <climits>
+#include <sys/fcntl.h>
 
 // Read the whole file at `path` into `out`. Returns 200 on success, 403 if it
 // can't be opened, 500 on a read error mid-stream. Opened in binary mode so
@@ -120,4 +121,26 @@ std::string trim(const std::string& s) {
         return "";
     size_t end = s.find_last_not_of(ows);
     return s.substr(start, end - start + 1);
+}
+
+void set_nonblocking(int fd) {
+    // Set socket to non-blocking mode.
+    fcntl(fd, F_SETFL, O_NONBLOCK);
+}
+
+void set_cloexec(int fd) {
+    // Close-on-exec: dropped from the fd on execve, so CGI children don't
+    // inherit listeners, other clients' sockets, or other CGI pipes.
+    fcntl(fd, F_SETFD, FD_CLOEXEC);
+}
+
+// Case-insensitive equality — CGI (and HTTP) header names are case-insensitive.
+bool insensitive_equals(const std::string &a, const std::string &b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); i++) {
+        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i]))) {
+            return false;
+        }
+    }
+    return true;
 }

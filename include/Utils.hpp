@@ -7,6 +7,7 @@
 # include <vector>
 
 # define CRLF "\r\n"
+# define LF "\n"
 
 class Str {
     std::ostringstream ss;
@@ -27,5 +28,14 @@ bool normalize_path(const std::string &path, std::string &out);
 // Read the whole regular file at `path` into `out`. Returns 200 on success,
 // 403 if it can't be opened, 500 on a read error mid-file.
 int read_file(const std::string &path, std::string &out);
+
+// Sets the given file descriptor to non-blocking mode.
+void set_nonblocking(int fd);
+
+// Sets close-on-exec so the fd is not inherited by execve'd CGI children.
+void set_cloexec(int fd);
+
+// Case-insensitive string comparison. Returns true if the strings are equal ignoring case.
+bool insensitive_equals(const std::string &a, const std::string &b);
 
 #endif

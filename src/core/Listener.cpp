@@ -3,7 +3,6 @@
 #include "Utils.hpp"
 #include <netdb.h>
 #include <sys/socket.h>
-#include <fcntl.h>
 #include <unistd.h>
 #include <cstring>
 
@@ -41,7 +40,9 @@ int Listener::start() {
         int one = 1;
         setsockopt(this->fd, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
         // Set socket to non-blocking mode.
-        fcntl(this->fd, F_SETFL, O_NONBLOCK);
+        set_nonblocking(this->fd);
+        // Don't leak the listener into CGI children.
+        set_cloexec(this->fd);
 
         if (bind(this->fd, p->ai_addr, p->ai_addrlen) == 0) break; // Bound.
 

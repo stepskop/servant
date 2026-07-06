@@ -1,4 +1,5 @@
 #include "Router.hpp"
+#include "Cgi.hpp"
 #include "Config.hpp"
 #include "Connection.hpp"
 #include "Request.hpp"
@@ -66,6 +67,22 @@ static bool is_method_allowed(const LocationConfig &location, const std::string 
     return location.methods.count(method) > 0;
 }
 
+static bool is_cgi(const LocationConfig &location, const std::string &target) {
+    std::string ext = location.cgi_extension;
+
+    if (ext.empty()) return false;
+
+    std::string path = target.substr(0, target.find('?'));   // strip query
+    size_t pos = path.find(ext);
+    while (pos != std::string::npos) {
+        size_t after = pos + ext.size();
+        if (after == path.size() || path[after] == '/')      // ".py" then EOL or '/'
+            return true;
+        pos = path.find(ext, pos + 1);
+    }
+    return false;
+}
+
 void resolve(Connection &conn) {
     std::string host = get_value(conn.req.headers, "host");
     conn.server = select_server(*conn.server_group, host);
@@ -91,6 +108,11 @@ void route(Connection &conn) {
     }
 
     conn.state = PROCESSING;
+
+    // If it is a CGI request, handle it with the CGI handler.
+    if (is_cgi(*conn.location, req.target)) {
+        return handle_cgi(conn);
+    }
 
     // Select the appropriate handler based on the request method and location configuration.
     if (req.method == "GET") {

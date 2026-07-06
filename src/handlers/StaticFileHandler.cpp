@@ -101,15 +101,8 @@ static void serve_directory(Connection& conn, const std::string& target, const s
 void serve_static(Connection& conn) {
     Request& req = conn.req;
 
-    // Collapse "." / ".." lexically and reject any target that escapes root.
-    std::string safe_target;
-    if (!normalize_path(req.target, safe_target)) {
-        Logger::warn(with_fd(conn.fd, Str() << "Path traversal blocked: " << req.target));
-        return conn.send(Response(403));
-    }
-
     // Build the full path to the requested file.
-    std::string file_path = Str() << conn.location->root << safe_target;
+    std::string file_path = Str() << conn.location->root << req.target;
 
     Logger::debug(Str() << "Stating the file: " << file_path);
     struct stat stat_buf;
@@ -129,7 +122,7 @@ void serve_static(Connection& conn) {
 
     // If it's a directory, handle it according to the location config.
     if (stat_mode == S_IFDIR) {
-        return serve_directory(conn, safe_target, file_path);
+        return serve_directory(conn, req.target, file_path);
     }
 
     // It's a regular file, so serve it.

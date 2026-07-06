@@ -131,18 +131,8 @@ void upload_file(Connection &conn) {
         return conn.send(Response(403));
     }
 
-    // The destination directory is taken from the URL path (below the location
-    // prefix) so the file lands where GET and DELETE will look for it. mkdir is
-    // not allowed, so a URL naming a directory that doesn't exist is rejected
-    // rather than silently flattened into upload_dir.
-    std::string safe_target;
-    if (!normalize_path(req.target, safe_target)) {
-        Logger::warn(with_fd(conn.fd, Str() << "Path traversal blocked: " << req.target));
-        return conn.send(Response(403));
-    }
-
     // Extract the subdirectory under the location prefix.
-    std::string subdir = safe_target; // "/location/subdir/file.txt"
+    std::string subdir = req.target; // "/location/subdir/file.txt"
     if (subdir.compare(0, conn.location->path.size(), conn.location->path) == 0) {
         subdir = subdir.substr(conn.location->path.size()); // "/subdir/file.txt"
     }
