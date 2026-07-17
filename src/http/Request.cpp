@@ -5,8 +5,9 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <limits>
 
-Request::Request(): body_size(0), initialized(false) {}
+Request::Request(): body_size(0), initialized(false), chunked(false) {}
 
 int parse_header(const std::string &block, Request &req) {
     std::vector<std::string> lines = split(block, CRLF);
@@ -97,4 +98,68 @@ int parse_header(const std::string &block, Request &req) {
     req.initialized = true;
 
     return 200;
+}
+
+// Parse strinf to unsigned hexadecimal number.
+static bool parse_hex(const std::string &s, size_t &out) {
+    if (s.empty()) return false;
+
+    size_t value = 0;
+    for (size_t i = 0; i < s.size(); i++) {
+        char c = s[i];
+        size_t digit;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+        else return false; // non-hex: space, '-', '+', junk
+
+        // Overflow guard before shift
+        if (value > (std::numeric_limits<size_t>::max() - digit) / 16) return false;
+        value = value * 16 + digit;
+    }
+
+    out = value;
+    return true;
+}
+
+// Unchunks a chunked body sitting at the front of data.
+//   0   -> incomplete, read more
+//   200 -> complete: req.body filled, in_buf advanced past the chunked stream
+//   400 -> malformed
+//   413 -> total body exceeds max_body
+int unchunk_data(std::string &in_buf, Request &req, size_t max_body) {
+    size_t pos = 0;
+    while (true) {
+        size_t crlf = in_buf.find(CRLF, pos);
+        if (crlf == std::string::npos) break; // Size line not fully here yet.
+
+        std::string size_line = in_buf.substr(pos, crlf - pos);
+        size_t semi = size_line.find(';');
+        if (semi != std::string::npos) size_line = size_line.substr(0, semi);
+
+        size_t chunk_size;
+        if (!parse_hex(size_line, chunk_size)) return 400;
+
+        size_t data_start = crlf + 2;
+
+        if (chunk_size == 0) {
+            size_t end = in_buf.find(CRLF, data_start);
+            if (end == std::string::npos) break; // Final CRLF not here yet.
+            in_buf.erase(0, end + 2); // Leave potentially piped next request.
+            req.body_size = req.body.size();
+            return 200;
+        }
+
+        if (req.body.size() + chunk_size > max_body) return 413;
+        if (in_buf.size() < data_start + chunk_size + 2) break; // Chunk not fully here
+        if (in_buf.compare(data_start + chunk_size, 2, CRLF) != 0) return 400;
+
+        req.body.append(in_buf, data_start, chunk_size);
+        pos = data_start + chunk_size + 2;
+    }
+
+    // Drop the chunks decoded this call; keep only the unfinished tail so the
+    // next recv appends to it and we rescan just that, not everything again.
+    in_buf.erase(0, pos);
+    return 0; // need more
 }

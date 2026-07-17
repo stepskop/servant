@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         make \
         valgrind \
         ca-certificates \
+        python3 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /webserv

@@ -15,8 +15,9 @@ class Request {
         std::string body;
         size_t body_size;
         bool initialized;
+        bool chunked;
 };
 
 int parse_header(const std::string &block, Request &req);
-
+int unchunk_data(std::string &in_buf, Request &req, size_t max_body);
 #endif

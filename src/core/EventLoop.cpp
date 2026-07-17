@@ -184,8 +184,7 @@ void EventLoop::cgi_write(Connection *conn) {
     cgi_process->in_sent += n;
 
     // Body fully delivered
-    if (cgi_process->in_sent == cgi_process->in_buf.size())
-        this->cgi_stop_writing(conn);
+    if (cgi_process->in_sent == cgi_process->in_buf.size()) this->cgi_stop_writing(conn);
 }
 
 // Close the CGI stdin pipe (child sees EOF) and stop polling it for writes.

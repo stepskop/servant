@@ -73,32 +73,46 @@ bool Connection::consume(const char* data, size_t len) {
         // If parsing doesn't end with 200. Return 400: Bad request.
         if (parse_res != 200) return (this->send(Response(parse_res)), false);
 
-        // TEMP: Reject chunked requests.
-        std::string transfer_encoding_raw = get_value(this->req.headers, "transfer-encoding");
-        if (!transfer_encoding_raw.empty() && transfer_encoding_raw == "chunked") {
-            return (this->send(Response(501)), false);
-        }
-
-        std::string content_length_raw = get_value(this->req.headers, "content-length");
-
         // Resolve the server and location for this request.
         // This is done after parsing the headers to ensure that the Host header is available for server selection.
         resolve(*this);
 
-        if (!content_length_raw.empty()) {
+        std::string content_length_raw = get_value(this->req.headers, "content-length");
+        std::string transfer_encoding_raw = get_value(this->req.headers, "transfer-encoding");
+
+        bool has_content_length = !content_length_raw.empty();
+        bool has_transfer_encoding = !transfer_encoding_raw.empty();
+
+        if (has_transfer_encoding) {
+            // Only "chunked" is supported; any other coding (gzip, compress, ...) -> 501.
+            if (transfer_encoding_raw != "chunked") return (this->send(Response(501)), false);
+            if (has_content_length) return (this->send(Response(400)), false);
+            this->req.chunked = true;
+        }
+
+        if (has_content_length) {
             long content_length = 0;
             if (!is_digits(content_length_raw) || !safe_atol(content_length_raw, content_length)) return (this->send(Response(400)), false);
             if (static_cast<size_t>(content_length) > this->location->client_max_body_size) return (this->send(Response(413)), false); // Body is too big.
-            if (content_length != 0) {
-                // Remove header from the buffer.
-                this->in_buf.erase(0, pos + header_end.size());
-                this->req.body_size = content_length;
-                this->state = READING_BODY;
-            }
+            this->req.body_size = content_length;
+        }
+
+        if (has_content_length || this->req.chunked) {
+            // Remove request header from the buffer.
+            this->in_buf.erase(0, pos + header_end.size());
+            this->state = READING_BODY;
         }
     }
 
     if (this->state == READING_BODY) {
+        // Chunked bodies are self-delimiting: decode until the 0-size chunk.
+        if (this->req.chunked) {
+            int unchunking_res = unchunk_data(this->in_buf, this->req, this->location->client_max_body_size);
+            if (unchunking_res == 0) return false; // Need to read more.
+            if (unchunking_res != 200) return (this->send(Response(unchunking_res)), false); // If unchunking errors.
+            return true;
+        }
+
         if (this->in_buf.size() < this->req.body_size) return false; // Need to read more;
         this->req.body.swap(this->in_buf);
 
