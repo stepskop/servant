@@ -11,13 +11,14 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <ctime>
 
 CgiProcess::CgiProcess(pid_t pid, int stdin_fd, int stdout_fd)
     :   pid(pid),
         stdin_fd(stdin_fd),
         stdout_fd(stdout_fd),
         in_sent(0),
-        started(time(NULL)) {}
+        started(std::time(NULL)) {}
 
 // Sole owner of the child's lifetime: close any open pipe ends and reap the
 // child so it never lingers as a zombie. Safe to run in any state because every

@@ -35,7 +35,6 @@ std::string Response::serialize() const {
 
     std::stringstream response;
     response << "HTTP/1.1 " << this->status << " " << get_status_string(this->status) << CRLF;
-    response << "Connection: close" << CRLF;
     response << "Content-Length: " << out_body.size() << CRLF;
 
     for (std::map<std::string, std::string>::const_iterator it = this->headers.begin(); it != this->headers.end(); ++it) {

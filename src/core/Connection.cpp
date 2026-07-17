@@ -7,6 +7,7 @@
 #include "Utils.hpp"
 #include <cstddef>
 #include <unistd.h>
+#include <ctime>
 
 Connection::Connection(int fd, const std::vector<const ServerConfig*> *server_group)
     :   fd(fd),
@@ -16,7 +17,9 @@ Connection::Connection(int fd, const std::vector<const ServerConfig*> *server_gr
         state(READING_HEADERS),
         sent(0),
         res_status(0),
-        cgi(NULL) {}
+        cgi(NULL),
+        keep_alive(false),
+        last_activity(std::time(NULL)) {}
 
 Connection::~Connection() {
     this->teardown_cgi();
@@ -46,10 +49,19 @@ void Connection::send(Response res) {
             }
         }
     }
+
+    res.header("Connection", this->keep_alive ? "keep-alive" : "close");
+
     this->res_status = status;
     this->out_buf.append(res.serialize());
     this->sent = 0;
+    this->last_activity = std::time(NULL);
     this->state = WRITING;
+}
+
+void Connection::fail(Response res) {
+    this->keep_alive = false; // Framing abandoned -> don't reparse leftover bytes.
+    this->send(res);
 }
 
 bool Connection::consume(const char* data, size_t len) {
@@ -63,7 +75,7 @@ bool Connection::consume(const char* data, size_t len) {
             // Early reject while client may still be sending ->
             // close() with unread data sends RST, client may lose this 400.
             // Fix: Use shutdown() after this, and recv() until depleted.
-            return (this->send(Response(400)), false); // Cannot read more.
+            return (this->fail(Response(400)), false); // Cannot read more.
         }
 
         std::string header_block = this->in_buf.substr(0, pos);
@@ -71,7 +83,15 @@ bool Connection::consume(const char* data, size_t len) {
         int parse_res = parse_header(header_block, this->req);
 
         // If parsing doesn't end with 200. Return 400: Bad request.
-        if (parse_res != 200) return (this->send(Response(parse_res)), false);
+        if (parse_res != 200) return (this->fail(Response(parse_res)), false);
+
+        // Connection token value is case-insensitive (RFC 7230).
+        std::string conn_hdr = get_value(req.headers, "connection");
+        if (req.version == "HTTP/1.1") {
+            this->keep_alive = !insensitive_equals(conn_hdr, "close");
+        } else { // HTTP/1.0
+            this->keep_alive = insensitive_equals(conn_hdr, "keep-alive");
+        }
 
         // Resolve the server and location for this request.
         // This is done after parsing the headers to ensure that the Host header is available for server selection.
@@ -85,21 +105,22 @@ bool Connection::consume(const char* data, size_t len) {
 
         if (has_transfer_encoding) {
             // Only "chunked" is supported; any other coding (gzip, compress, ...) -> 501.
-            if (transfer_encoding_raw != "chunked") return (this->send(Response(501)), false);
-            if (has_content_length) return (this->send(Response(400)), false);
+            if (transfer_encoding_raw != "chunked") return (this->fail(Response(501)), false);
+            if (has_content_length) return (this->fail(Response(400)), false);
             this->req.chunked = true;
         }
 
         if (has_content_length) {
             long content_length = 0;
-            if (!is_digits(content_length_raw) || !safe_atol(content_length_raw, content_length)) return (this->send(Response(400)), false);
-            if (static_cast<size_t>(content_length) > this->location->client_max_body_size) return (this->send(Response(413)), false); // Body is too big.
+            if (!is_digits(content_length_raw) || !safe_atol(content_length_raw, content_length)) return (this->fail(Response(400)), false);
+            if (static_cast<size_t>(content_length) > this->location->client_max_body_size) return (this->fail(Response(413)), false); // Body is too big.
             this->req.body_size = content_length;
         }
 
         if (has_content_length || this->req.chunked) {
             // Remove request header from the buffer.
             this->in_buf.erase(0, pos + header_end.size());
+            this->last_activity = std::time(NULL);
             this->state = READING_BODY;
         }
     }
@@ -109,7 +130,7 @@ bool Connection::consume(const char* data, size_t len) {
         if (this->req.chunked) {
             int unchunking_res = unchunk_data(this->in_buf, this->req, this->location->client_max_body_size);
             if (unchunking_res == 0) return false; // Need to read more.
-            if (unchunking_res != 200) return (this->send(Response(unchunking_res)), false); // If unchunking errors.
+            if (unchunking_res != 200) return (this->fail(Response(unchunking_res)), false); // If unchunking errors.
             return true;
         }
 

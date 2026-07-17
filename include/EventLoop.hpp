@@ -20,11 +20,11 @@ class EventLoop {
         void cgi_fail(Connection *);
         void cgi_finish(Connection *);
         void unregister_cgi(Connection *);
-        // poll() timeout (ms) until the nearest CGI deadline; -1 when no CGI is
-        // running so the loop blocks instead of busy-waiting.
-        int cgi_poll_timeout();
+        // poll() timeout (ms) until the nearest timeout; -1 when no connections are present
+        // so the loop blocks instead of busy-waiting.
+        int next_timeout_ms();
         // Kill + reap any CGI that has run past CGI_TIMEOUT, answering 504.
-        void cleanup_cgi_timeouts();
+        void check_timeouts();
     public:
         ~EventLoop();
         void add_listener(std::vector<const ServerConfig*> &servers);

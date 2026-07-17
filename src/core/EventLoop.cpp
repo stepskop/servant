@@ -18,6 +18,7 @@
 #include <sys/wait.h>
 #include <csignal>
 #include <cerrno>
+#include <ctime>
 
 // Set by the signal handler, polled by the run loop for a clean shutdown.
 volatile sig_atomic_t g_stop = 0;
@@ -45,6 +46,26 @@ short resolve_poll_event(ConnectionState state) {
         case CLOSING: // FD to be closed
         default:
             return 0; // No need to wake up.
+    }
+}
+
+// Seconds of allowed inactivity for a connection in the given state.
+// Returns -1 for "no client-side timeout" (WAITING_CGI: the CgiProcess
+// deadline owns that period; the client socket is parked by design).
+static time_t timeout_for(const Connection &conn) {
+    switch (conn.state) {
+        case READING_HEADERS:
+            // Empty buffer: keep-alive idle (or a fresh, silent connection).
+            // Bytes buffered: a request is in flight — slowloris clock.
+            return conn.in_buf.empty() ? IDLE_TIMEOUT : HEADER_TIMEOUT;
+        case READING_BODY:
+            return BODY_TIMEOUT;
+        case WRITING:
+            return WRITE_TIMEOUT;
+        case WAITING_CGI:
+            return -1;
+        default:
+            return IDLE_TIMEOUT;
     }
 }
 
@@ -100,6 +121,8 @@ void EventLoop::handle_read(Connection *connection) {
 
         return this->close_connection(connection);
     }
+
+    connection->last_activity = std::time(NULL);
 
     // Frame the request; serve only once a full request is buffered.
     bool can_serve = connection->consume(buffer, recv_res);
@@ -233,38 +256,61 @@ void EventLoop::cgi_fail(Connection *conn) {
     conn->send(Response(502));
 }
 
-// Smallest ms until any running CGI hits its deadline. -1 (block forever) when
+// Smallest ms until any connection state or CGI hits its timeout. -1 (block forever) when
 // none are running; 0 when one is already past due so poll() returns at once.
-int EventLoop::cgi_poll_timeout() {
+int EventLoop::next_timeout_ms() {
     int timeout = -1;
-    time_t now = time(NULL);
+    time_t now = std::time(NULL);
 
     for (std::map<int, Connection*>::iterator it = this->connections.begin(); it != this->connections.end(); it++) {
-        const CgiProcess *cgi = it->second->cgi;
-        if (!cgi) continue;
+        const Connection *conn = it->second;
+        const CgiProcess *cgi = conn->cgi;
 
-        long ms = (static_cast<long>(cgi->started) + CGI_TIMEOUT - now) * 1000;
-        if (ms < 0) ms = 0;
+        long s = 0;
+        if (cgi) {
+            s = (static_cast<long>(cgi->started) + CGI_TIMEOUT - now);
+        } else {
+            time_t t = timeout_for(*conn);
+            if (t < 0) continue;   // Waiting for CGI (most likely)
+            s = static_cast<long>(conn->last_activity) + t - now;
+        }
+
+        if (s < 0) s = 0; // already past due -> poll must return immediately
+
+        long ms = s * 1000;
         if (timeout == -1 || ms < timeout) timeout = static_cast<int>(ms);
     }
 
     return timeout;
 }
 
-void EventLoop::cleanup_cgi_timeouts() {
-    time_t now = time(NULL);
+void EventLoop::check_timeouts() {
+    time_t now = std::time(NULL);
 
-    for (std::map<int, Connection*>::iterator it = this->connections.begin(); it != this->connections.end(); it++) {
-        Connection *conn = it->second;
-        if (!conn->cgi) continue;
-        if (now - conn->cgi->started < CGI_TIMEOUT) continue;
+    for (std::map<int, Connection*>::iterator it = this->connections.begin(); it != this->connections.end(); ) {
+        Connection *conn = (it++)->second; // Advance now; close_connection below may erase conn.
 
-        Logger::warn(with_fd(conn->fd, "CGI timed out. Killing."));
+        if (conn->cgi) {
+            if (now - conn->cgi->started < CGI_TIMEOUT) continue;
 
-        this->unregister_cgi(conn);
-        conn->teardown_cgi(); // SIGKILL + waitpid reaps the runaway child.
+            Logger::warn(with_fd(conn->fd, "CGI timed out. Killing."));
 
-        conn->send(Response(504));
+            this->unregister_cgi(conn);
+            conn->teardown_cgi(); // SIGKILL + waitpid reaps the runaway child.
+
+            conn->fail(Response(504));
+        } else {
+            time_t state_timeout = timeout_for(*conn);
+            if (state_timeout < 0) continue; // Exempt (waiting for CGI) -> must match next_timeout_ms.
+            if (now - conn->last_activity < state_timeout) continue;
+
+            // If mid request.
+            if (conn->state == READING_BODY || (conn->state == READING_HEADERS && !conn->in_buf.empty())) {
+                conn->fail(Response(408));
+            } else { // Stall WRITING / keep-alive with 0 bytes -> close silently, no request was made.
+                this->close_connection(conn);
+            }
+        }
     }
 }
 
@@ -321,7 +367,7 @@ int EventLoop::run() {
         // Poll the FDs. Timeout is the nearest CGI deadline (-1 = block forever
         // when no CGI is running), so a hung child is reaped promptly.
         Logger::debug("Polling.");
-        int ready_n = poll(&fds[0], fds.size(), this->cgi_poll_timeout());
+        int ready_n = poll(&fds[0], fds.size(), this->next_timeout_ms());
         Logger::debug("Polled.");
         if (ready_n == -1) {
             if (errno == EINTR) continue; // Signal arrived -> recheck g_stop.
@@ -372,7 +418,7 @@ int EventLoop::run() {
         }
 
         // Stop any CGI past its deadline (covers poll() waking purely on timeout).
-        this->cleanup_cgi_timeouts();
+        this->check_timeouts();
     }
 
     Logger::info("Shutdown signal received. Exiting.");

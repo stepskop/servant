@@ -8,6 +8,11 @@
 # include "Response.hpp"
 # include "Cgi.hpp"
 
+# define HEADER_TIMEOUT 10 // seconds
+# define BODY_TIMEOUT   30
+# define IDLE_TIMEOUT   15
+# define WRITE_TIMEOUT  30
+
 # define MAX_HEADER_SIZE 8192 // 8 KB
 # define READ_BUFFER_SIZE 8192 // 8 KB
 
@@ -31,8 +36,15 @@ class Connection {
         Request req;
         size_t res_status;
         CgiProcess *cgi;
+        bool keep_alive;
+        time_t last_activity;
 
         void send(Response res);
+        // Send an error response that abandons request framing: forces the
+        // connection closed so leftover/unread bytes are never reparsed as a
+        // new request. Use when framing is undecodable (400/501), the body was
+        // left unread (408/413), or processing aborted (504).
+        void fail(Response res);
         // Append freshly-received bytes and advance the request framing state machine.
         // When a full request is buffered returns true meaning that the request can be handled.
         bool consume(const char* data, size_t len);

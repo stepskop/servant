@@ -2,7 +2,6 @@
 # define CGI_HPP
 
 # include <sys/types.h>
-# include <ctime>
 # include <string>
 # include "Response.hpp"
 

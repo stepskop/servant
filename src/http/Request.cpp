@@ -52,7 +52,7 @@ int parse_header(const std::string &block, Request &req) {
         Logger::debug(Str() << "Malformed HTTP version: " << version);
         return 400;
     }
-    if (version != "HTTP/1.1") {
+    if (version != "HTTP/1.1" && version != "HTTP/1.0") {
         Logger::debug(Str() << "Unsupported HTTP version: " << version);
         return 505;
     }
@@ -89,8 +89,8 @@ int parse_header(const std::string &block, Request &req) {
         req.headers.insert(std::make_pair(name, value));
     }
 
-    // HTTP/1.1 mandates a Host header.
-    if (req.headers.find("host") == req.headers.end()) {
+    // HTTP/1.1 mandates a Host header; HTTP/1.0 does not.
+    if (req.version == "HTTP/1.1" && req.headers.find("host") == req.headers.end()) {
         Logger::debug("Missing required Host header");
         return 400;
     }
