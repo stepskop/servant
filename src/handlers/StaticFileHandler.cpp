@@ -69,7 +69,8 @@ static void serve_file(Connection& conn, const std::string& file_path) {
 }
 
 // Handle a directory request: redirect a missing trailing slash, serve the
-// index file if present, else autoindex or 403 depending on config.
+// index file if present, else a listing (autoindex on). With no listing: a
+// configured-but-absent index is 404, an unconfigured index is 403.
 static void serve_directory(Connection& conn, const std::string& target, const std::string& dir_path) {
     // No trailing slash -> 301 to "/sub/" so relative URLs resolve right.
     if (target[target.size() - 1] != '/') {
@@ -77,15 +78,20 @@ static void serve_directory(Connection& conn, const std::string& target, const s
     }
 
     // Try the index file first; serve it if present.
-    std::string index_path = dir_path + conn.location->index;
-    Logger::debug(Str() << "Stating the index file: " << conn.location->index);
-    struct stat index_stat_buf;
-    if (!conn.location->index.empty() && stat(index_path.c_str(), &index_stat_buf) == 0 && S_ISREG(index_stat_buf.st_mode)) {
-        return serve_file(conn, index_path);
-    }
-
-    // If no index file, check autoindex config. If off, respond 403.
-    if (!conn.location->autoindex) {
+    if (!conn.location->index.empty()) {
+        std::string index_path = dir_path + conn.location->index;
+        Logger::debug(Str() << "Stating the index file: " << conn.location->index);
+        struct stat index_stat_buf;
+        if (stat(index_path.c_str(), &index_stat_buf) == 0 && S_ISREG(index_stat_buf.st_mode)) {
+            return serve_file(conn, index_path);
+        }
+        // An index is configured but this directory doesn't have it. With no
+        // listing to fall back to, the requested resource is simply missing -> 404.
+        if (!conn.location->autoindex) {
+            return conn.send(Response(404));
+        }
+    } else if (!conn.location->autoindex) {
+        // No index configured and directory listing disabled -> forbidden.
         return conn.send(Response(403));
     }
 
@@ -101,8 +107,8 @@ static void serve_directory(Connection& conn, const std::string& target, const s
 void serve_static(Connection& conn) {
     Request& req = conn.req;
 
-    // Build the full path to the requested file.
-    std::string file_path = Str() << conn.location->root << req.target;
+    // Build the full path to the requested file (honours root vs alias).
+    std::string file_path = conn.location->fs_path(req.target);
 
     Logger::debug(Str() << "Stating the file: " << file_path);
     struct stat stat_buf;

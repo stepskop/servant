@@ -103,6 +103,13 @@ static LocationConfig resolve_location(const RawLocationConfig &raw, const Serve
     // Inheritance: fall back to the server's (already-resolved) values.
     loc.root  = raw.root.empty()  ? server.root  : raw.root;
     loc.index = raw.index.empty() ? server.index : raw.index;
+
+    // alias replaces the matched prefix rather than being appended, so it never
+    // inherits from the server. Drop a trailing slash so alias + "/rest" joins cleanly.
+    loc.alias = raw.alias;
+    if (loc.alias.size() > 1 && loc.alias[loc.alias.size() - 1] == '/') {
+        loc.alias.erase(loc.alias.size() - 1);
+    }
     loc.autoindex = (raw.autoindex == "on");
     loc.client_max_body_size = raw.client_max_body_size.empty() ? server.client_max_body_size : to_bytes(raw.client_max_body_size);
     loc.upload_dir = raw.upload_dir;
@@ -128,7 +135,7 @@ static LocationConfig resolve_location(const RawLocationConfig &raw, const Serve
     // If the location has no root and the server has no root, that's an error.
     // The server's root is inherited if the location doesn't define one, so this check is only needed if both are empty.
     // Throws only when realy needed -> the location has no root and the location has no redirect (which would make the root irrelevant).
-    if (loc.root.empty() && loc.redirect.first == 0) {
+    if (loc.root.empty() && loc.alias.empty() && loc.redirect.first == 0) {
        throw std::runtime_error(Str() << "location " << raw.path << " has no root and the server declares none to inherit");
     }
 

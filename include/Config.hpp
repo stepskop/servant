@@ -19,6 +19,7 @@ struct RawLocationConfig {
     std::string                 path;
     std::vector<std::string>    methods;
     std::string                 root;
+    std::string                 alias;
     std::string                 index;
     std::string                 autoindex;
     std::string                 redirect_code;
@@ -48,6 +49,7 @@ struct LocationConfig {
     std::string                 path;            // e.g. "/uploads"
     std::set<std::string>       methods;         // subset of {GET, POST, DELETE}
     std::string                 root;            // inherits server root if empty
+    std::string                 alias;           // if set, replaces the matched path prefix (nginx `alias`)
     std::string                 index;           // inherits server index if empty
     bool                        autoindex;
     std::pair<int, std::string> redirect;    // status + target; status 0 == none
@@ -58,6 +60,11 @@ struct LocationConfig {
     std::size_t                 client_max_body_size;
 
     LocationConfig(): autoindex(false), redirect(0, "") {}
+
+    // Map a request URL path to a filesystem path. With `alias` the matched
+    // location prefix is replaced by the alias (nginx `alias`); otherwise the
+    // full URL is appended to `root` (nginx `root`).
+    std::string fs_path(const std::string &url_path) const;
 };
 
 struct ServerConfig {

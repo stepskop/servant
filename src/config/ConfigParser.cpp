@@ -42,6 +42,8 @@ static RawLocationConfig parse_location(Cursor &cursor) {
             cursor.expect(TERMINATOR);
         } else if (keyword == "root") {
             loc.root = parse_single_value(cursor);
+        } else if (keyword == "alias") {
+            loc.alias = parse_single_value(cursor);
         } else if (keyword == "index") {
             loc.index = parse_single_value(cursor);
         } else if (keyword == "client_max_body_size") {
