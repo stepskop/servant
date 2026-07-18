@@ -14,6 +14,7 @@ class EventLoop {
         void close_connection(Connection *);
         void handle_read(Connection *);
         void handle_write(Connection *);
+        void serve(Connection *);
         void cgi_read(Connection *);
         void cgi_write(Connection *);
         void cgi_stop_writing(Connection *);

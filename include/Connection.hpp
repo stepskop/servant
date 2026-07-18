@@ -16,7 +16,7 @@
 # define MAX_HEADER_SIZE 8192 // 8 KB
 # define READ_BUFFER_SIZE 8192 // 8 KB
 
-enum ConnectionState { READING_HEADERS, READING_BODY, PROCESSING, WAITING_CGI, WRITING, CLOSING };
+enum ConnectionState { READING_HEADERS, READING_BODY, WAITING_CGI, WRITING };
 
 class Connection {
     public:
@@ -45,14 +45,21 @@ class Connection {
         // new request. Use when framing is undecodable (400/501), the body was
         // left unread (408/413), or processing aborted (504).
         void fail(Response res);
-        // Append freshly-received bytes and advance the request framing state machine.
-        // When a full request is buffered returns true meaning that the request can be handled.
+        // Append freshly-received bytes, then advance framing. Returns true when
+        // a full request is buffered and ready to serve.
         bool consume(const char* data, size_t len);
+        // Advance the request framing state machine over in_buf without reading
+        // new bytes. Re-entry point for a pipelined request already buffered
+        // after the previous one was served (poll won't wake us for bytes we
+        // already hold). Returns true when a full request is buffered.
+        bool frame();
         bool should_register_cgi() const;
         // Tear down the CGI child: delete the process (dtor closes its fds and
         // reaps the child) and clear the pointer. Idempotent. The owning
         // EventLoop must unregister the fds from its poll set first.
         void teardown_cgi();
+
+        void reset();
     private:
         Connection(const Connection& src);
         Connection& operator=(const Connection& src);

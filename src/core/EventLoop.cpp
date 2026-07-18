@@ -42,8 +42,6 @@ short resolve_poll_event(ConnectionState state) {
         case WRITING:
             return POLLOUT;
         case WAITING_CGI:
-        case PROCESSING: // Building a response
-        case CLOSING: // FD to be closed
         default:
             return 0; // No need to wake up.
     }
@@ -110,6 +108,22 @@ void EventLoop::close_connection(Connection *connection) {
     delete connection;
 }
 
+void EventLoop::serve(Connection *connection) {
+    route(*connection);
+
+    if (connection->should_register_cgi()) {
+        this->cgi_fds.insert(std::make_pair(connection->cgi->stdout_fd, connection));
+
+        if (!connection->cgi->in_buf.empty()) {
+            this->cgi_fds.insert(std::make_pair(connection->cgi->stdin_fd, connection));
+        } else {
+            // No body to feed -> close stdin now so the child sees EOF immediately.
+            close(connection->cgi->stdin_fd);
+            connection->cgi->stdin_fd = -1;
+        }
+    }
+}
+
 void EventLoop::handle_read(Connection *connection) {
     char buffer[READ_BUFFER_SIZE];
     int fd = connection->fd;
@@ -128,31 +142,22 @@ void EventLoop::handle_read(Connection *connection) {
     bool can_serve = connection->consume(buffer, recv_res);
     if (!can_serve) return;
 
-    route(*connection);
-
-    if (connection->should_register_cgi()) {
-        this->cgi_fds.insert(std::make_pair(connection->cgi->stdout_fd, connection));
-
-        if (!connection->cgi->in_buf.empty()) {
-            this->cgi_fds.insert(std::make_pair(connection->cgi->stdin_fd, connection));
-        } else {
-            // No body to feed -> close stdin now so the child sees EOF immediately
-            // instead of blocking on a read that never gets data.
-            close(connection->cgi->stdin_fd);
-            connection->cgi->stdin_fd = -1;
-        }
-    }
+    this->serve(connection);
 }
 
 void EventLoop::handle_write(Connection *connection) {
     int fd = connection->fd;
 
-    if (connection->req.initialized) {
-        // If the incoming request was successfuly parsed, we can log some details.
-        Request req = connection->req;
-        Logger::info(with_fd(connection->fd, Str() << req.method << " " << req.target << " " << req.version << " " << connection->res_status));
-    } else {
-        Logger::info(with_fd(connection->fd, Str() << "Malformed request " << connection->res_status ));
+    // Log once per response, on the first write event; a big response split across
+    // many writes must not re-log, pipelined requests logs one line per served request.
+    if (connection->sent == 0) {
+        if (connection->req.initialized) {
+            // If the incoming request was successfuly parsed, we can log some details.
+            Request req = connection->req;
+            Logger::info(with_fd(connection->fd, Str() << req.method << " " << req.target << " " << req.version << " " << connection->res_status));
+        } else {
+            Logger::info(with_fd(connection->fd, Str() << "Malformed request " << connection->res_status ));
+        }
     }
 
     size_t to_send = connection->out_buf.size() - connection->sent;
@@ -167,8 +172,12 @@ void EventLoop::handle_write(Connection *connection) {
     connection->sent += send_res;
 
     if (connection->sent == connection->out_buf.size()) {
-        // TODO: If keep-alive -> reset to READING_HEADERS
-        return this->close_connection(connection);
+        if (!connection->keep_alive) return this->close_connection(connection);
+
+        connection->reset();
+
+        // If there is some data in the ingress buffer and it can form an request, serve it.
+        if (!connection->in_buf.empty() && connection->frame()) this->serve(connection);
     }
 }
 
@@ -216,14 +225,14 @@ void EventLoop::cgi_stop_writing(Connection *conn) {
     CgiProcess *cgi_process = conn->cgi;
     if (cgi_process->stdin_fd == -1) return;
     close(cgi_process->stdin_fd);
-    cgi_fds.erase(cgi_process->stdin_fd);
+    this->cgi_fds.erase(cgi_process->stdin_fd);
     cgi_process->stdin_fd = -1;
 }
 
 void EventLoop::unregister_cgi(Connection *conn) {
     if (!conn->cgi) return;
-    cgi_fds.erase(conn->cgi->stdin_fd);
-    cgi_fds.erase(conn->cgi->stdout_fd);
+    this->cgi_fds.erase(conn->cgi->stdin_fd);
+    this->cgi_fds.erase(conn->cgi->stdout_fd);
 }
 
 void EventLoop::cgi_finish(Connection *conn) {

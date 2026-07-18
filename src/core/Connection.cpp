@@ -1,4 +1,5 @@
 #include "Connection.hpp"
+#include "Logger.hpp"
 #include "Mime.hpp"
 #include "Response.hpp"
 #include "Request.hpp"
@@ -66,6 +67,10 @@ void Connection::fail(Response res) {
 
 bool Connection::consume(const char* data, size_t len) {
     this->in_buf.append(data, len);
+    return this->frame();
+}
+
+bool Connection::frame() {
     std::string header_end = Str() << CRLF << CRLF;
     size_t pos = this->in_buf.find(header_end);
 
@@ -118,11 +123,12 @@ bool Connection::consume(const char* data, size_t len) {
         }
 
         if (has_content_length || this->req.chunked) {
-            // Remove request header from the buffer.
-            this->in_buf.erase(0, pos + header_end.size());
             this->last_activity = std::time(NULL);
             this->state = READING_BODY;
         }
+
+        // Remove request header from the buffer.
+        this->in_buf.erase(0, pos + header_end.size());
     }
 
     if (this->state == READING_BODY) {
@@ -146,4 +152,15 @@ bool Connection::consume(const char* data, size_t len) {
     }
 
     return true; // Fully framed -> ready to serve.
+}
+
+void Connection::reset() {
+    this->req = Request();
+    this->out_buf.clear();
+    this->sent = 0;
+    this->res_status = 0;
+    this->state = READING_HEADERS;
+    this->last_activity = std::time(NULL);
+
+    if (this->cgi != NULL) Logger::error(with_fd(this->fd, "CGI is not NULL, this should not happen"));
 }

@@ -107,8 +107,6 @@ void route(Connection &conn) {
         return conn.send(Response(conn.location->redirect.first).header("Location", conn.location->redirect.second));
     }
 
-    conn.state = PROCESSING;
-
     // If it is a CGI request, handle it with the CGI handler.
     if (is_cgi(*conn.location, req.target)) {
         return handle_cgi(conn);
