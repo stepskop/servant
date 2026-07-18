@@ -15,7 +15,7 @@ class Response {
         Response& body(const std::string& content);
         Response& header(const std::string& key, const std::string& value);
         size_t get_status() const;
-        std::string serialize() const;
+        std::string serialize(bool exclude_body = false) const;
         bool has_body() const;
     private:
         size_t status;

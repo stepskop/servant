@@ -54,7 +54,16 @@ void Connection::send(Response res) {
     res.header("Connection", this->keep_alive ? "keep-alive" : "close");
 
     this->res_status = status;
-    this->out_buf.append(res.serialize());
+
+    // A response to HEAD carries the same status line and headers as GET
+    // (Content-Length included) but MUST NOT include a message body (RFC 9110
+    // 9.3.2). Leaving the body on the wire would strand those bytes on a
+    // keep-alive socket -- the client reads none for HEAD -- and desync the next
+    // request. Strip everything past the header block.
+    bool exclude_body = this->req.method == "HEAD";
+    std::string serialized = res.serialize(exclude_body);
+
+    this->out_buf.append(serialized);
     this->sent = 0;
     this->last_activity = std::time(NULL);
     this->state = WRITING;

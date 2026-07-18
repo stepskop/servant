@@ -25,7 +25,7 @@ bool Response::has_body() const {
     return !this->body_str.empty();
 }
 
-std::string Response::serialize() const {
+std::string Response::serialize(bool exclude_body) const {
     std::string out_body = this->body_str;
 
     // Provide default error page when no body defined.
@@ -41,7 +41,10 @@ std::string Response::serialize() const {
         response << it->first << ": " << it->second << CRLF;
     }
     response << CRLF;
-    response << out_body;
+
+    if (!exclude_body) {
+        response << out_body;
+    }
 
     return response.str();
 }
