@@ -7,8 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         g++ \
         make \
         valgrind \
+        siege \
         ca-certificates \
         python3 \
+        netcat-traditional \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /webserv
