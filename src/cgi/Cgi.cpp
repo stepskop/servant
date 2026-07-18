@@ -51,7 +51,7 @@ static void split_cgi_target(const std::string &target, const std::string &ext, 
     path_info   = "";
 }
 
-static std::vector<std::string> build_cgi_env(Connection &conn, const std::string &script_name, const std::string &path_info) {
+static std::vector<std::string> build_cgi_env(Connection &conn, const std::string &script_name) {
     const Request &req = conn.req;
     std::vector<std::string> env;
 
@@ -60,17 +60,17 @@ static std::vector<std::string> build_cgi_env(Connection &conn, const std::strin
     env.push_back("REDIRECT_STATUS=200"); // some interpreters (php-cgi) refuse to run without it
     env.push_back(Str() << "REQUEST_METHOD=" << req.method);
     env.push_back(Str() << "SCRIPT_NAME=" << script_name);
-    env.push_back(Str() << "SCRIPT_FILENAME=" << conn.location->root << script_name);
+    env.push_back(Str() << "SCRIPT_FILENAME=" << conn.location->fs_path(script_name));
     env.push_back(Str() << "QUERY_STRING=" << req.query);
     env.push_back(Str() << "SERVER_NAME=" << conn.server->host);
     env.push_back(Str() << "SERVER_PORT=" << conn.server->port);
 
-    // Extra path after the script name, per RFC 3875. PATH_TRANSLATED maps it
-    // onto the filesystem under root (same root semantics as everything else).
-    if (!path_info.empty()) {
-        env.push_back(Str() << "PATH_INFO=" << path_info);
-        env.push_back(Str() << "PATH_TRANSLATED=" << conn.location->root << path_info);
-    }
+    std::string request_uri = req.query.empty()
+        ? req.target
+        : std::string(Str() << req.target << "?" << req.query);
+    env.push_back(Str() << "REQUEST_URI=" << request_uri);
+    env.push_back(Str() << "PATH_INFO=" << req.target);
+    env.push_back(Str() << "PATH_TRANSLATED=" << conn.location->fs_path(req.target));
 
     std::string content_type = get_value(req.headers, "content-type");
     if (!content_type.empty()) env.push_back(Str() << "CONTENT_TYPE=" << content_type);
@@ -92,18 +92,16 @@ static std::vector<std::string> build_cgi_env(Connection &conn, const std::strin
 }
 
 void handle_cgi(Connection &conn) {
-    // Split off any trailing PATH_INFO so we stat/exec the script itself, not
-    // "/cgi-bin/x.py/extra" (which would 404).
+    // Split off any trailing PATH_INFO so we exec the script itself, not
+    // "/cgi-bin/x.py/extra".
     std::string script_name;
     std::string path_info;
     split_cgi_target(conn.req.target, conn.location->cgi_extension, script_name, path_info);
 
-    // Check that the script is a regular file and readable. If not -> 404 / 403.
-    std::string fs_path = conn.location->root + script_name; // same string chdir+argv resolve to
-    struct stat st;
-    if (stat(fs_path.c_str(), &st) == -1) return conn.send(Response(404));
-    if (!S_ISREG(st.st_mode))             return conn.send(Response(404));
-    if (access(fs_path.c_str(), R_OK))    return conn.send(Response(403));
+    // A CGI-extension request runs the configured interpreter regardless of
+    // whether the script file exists on disk. fs_path is still where the child
+    // chdir's and what SCRIPT_FILENAME points to.
+    std::string fs_path = conn.location->fs_path(script_name); // same string chdir+argv resolve to
 
     // The interpreter itself must exist and be executable.
     if (access(conn.location->cgi_interpreter.c_str(), X_OK) != 0) {
@@ -135,7 +133,7 @@ void handle_cgi(Connection &conn) {
 
     // Create the environment.
     std::vector<char*> envp;
-    std::vector<std::string> env = build_cgi_env(conn, script_name, path_info);
+    std::vector<std::string> env = build_cgi_env(conn, script_name);
     // Convert to char* array for execve.
     for (size_t i = 0; i < env.size(); i++) {
         envp.push_back(const_cast<char*>(env[i].c_str()));
