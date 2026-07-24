@@ -6,7 +6,7 @@
 enum LogLevel { DEBUG, INFO, WARNING, ERROR };
 
 #ifndef LOG_LEVEL
-# define LOG_LEVEL DEBUG
+# define LOG_LEVEL INFO
 #endif
 
 class Logger {
