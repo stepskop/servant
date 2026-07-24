@@ -94,7 +94,8 @@ static RawServerConfig parse_server(Cursor &cursor) {
         } else if (keyword == "server_name") {
             cursor.advance();
             while (cursor.is(WORD)) {
-                server.server_names.insert(cursor.advance().value);
+                // Lowercase now so lookups against a lowercased Host header match.
+                server.server_names.insert(to_lower(cursor.advance().value));
             }
             cursor.expect(TERMINATOR);
         } else if (keyword == "root") {

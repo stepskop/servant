@@ -7,12 +7,9 @@
 #include "Utils.hpp"
 
 static const ServerConfig* select_server(const std::vector<const ServerConfig*> &server_group , const std::string &host) {
-    // Strip port (example.com:80 -> example.com) and lowercase once: the Host
-    // header is case-insensitive, and server_names are stored lowercased.
-    std::string host_without_port = host.substr(0, host.find(':'));
-    for (size_t i = 0; i < host_without_port.size(); ++i) {
-        host_without_port[i] = std::tolower(static_cast<unsigned char>(host_without_port[i]));
-    }
+    // Strip port (example.com:80 -> example.com) and lowercase: the Host header
+    // is case-insensitive, and server_names are stored lowercased.
+    std::string host_without_port = to_lower(host.substr(0, host.find(':')));
 
     for (size_t i = 0; i < server_group.size(); i++) {
         if (server_group[i]->server_names.count(host_without_port)) return server_group[i];

@@ -38,4 +38,7 @@ void set_cloexec(int fd);
 // Case-insensitive string comparison. Returns true if the strings are equal ignoring case.
 bool insensitive_equals(const std::string &a, const std::string &b);
 
+// Returns a lowercased copy of `s` (ASCII).
+std::string to_lower(std::string s);
+
 #endif

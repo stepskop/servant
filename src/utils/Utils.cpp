@@ -144,3 +144,10 @@ bool insensitive_equals(const std::string &a, const std::string &b) {
     }
     return true;
 }
+
+std::string to_lower(std::string s) {
+    for (size_t i = 0; i < s.size(); i++) {
+        s[i] = std::tolower(static_cast<unsigned char>(s[i]));
+    }
+    return s;
+}

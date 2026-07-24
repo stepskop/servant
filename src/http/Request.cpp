@@ -82,11 +82,7 @@ int parse_header(const std::string &block, Request &req) {
 
 
         // Normalize name to lowercase for case-insensitive lookups.
-        for (size_t j = 0; j < name.size(); j++) {
-            name[j] = std::tolower(static_cast<unsigned char>(name[j]));
-        }
-
-        req.headers.insert(std::make_pair(name, value));
+        req.headers.insert(std::make_pair(to_lower(name), value));
     }
 
     // HTTP/1.1 mandates a Host header; HTTP/1.0 does not.

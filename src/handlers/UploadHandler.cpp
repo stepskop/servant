@@ -16,21 +16,13 @@ static bool safe_basename(const std::string &raw, std::string &out) {
     return true;
 }
 
-// Lowercase a copy of `s` for case-insensitive header-name matching.
-static std::string lower(std::string s) {
-    for (std::string::size_type i = 0; i < s.size(); ++i) {
-        s[i] = std::tolower(static_cast<unsigned char>(s[i]));
-    }
-    return s;
-}
-
 // Pull the filename="..." token out of a part's header block. The token is only
 // honored on the Content-Disposition line, so a stray filename=" in any other
 // header can't be mistaken for the upload name.
 static bool disposition_filename(const std::string &headers, std::string &out) {
     std::vector<std::string> lines = split(headers, CRLF);
     for (std::vector<std::string>::size_type i = 0; i < lines.size(); ++i) {
-        if (lower(lines[i]).compare(0, 20, "content-disposition:") != 0) {
+        if (to_lower(lines[i]).compare(0, 20, "content-disposition:") != 0) {
             continue;
         }
         std::string::size_type key = lines[i].find("filename=\"");
