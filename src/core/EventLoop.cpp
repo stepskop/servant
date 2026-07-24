@@ -413,8 +413,8 @@ int EventLoop::run() {
             Connection *conn = connections[polled.fd];
 
             // Else -> Is connection FD.
-            if (polled.revents & (POLLERR|POLLNVAL)) {
-                Logger::error(with_fd(polled.fd, "Socket error. Closing."));
+            if (polled.revents & POLLNVAL) {
+                Logger::error(with_fd(polled.fd, "Invalid file descriptor. Closing."));
                 this->close_connection(conn);
             } else if (polled.revents & POLLIN) {
                 this->handle_read(conn);
@@ -422,6 +422,9 @@ int EventLoop::run() {
                 this->handle_write(conn);
             } else if (polled.revents & POLLHUP) {
                 Logger::debug(with_fd(polled.fd, "Peer hung up. Closing."));
+                this->close_connection(conn);
+            } else if (polled.revents & POLLERR) { // POLLERR be raised together with POLLIN. Check error after to keep recieved data.
+                Logger::debug(with_fd(polled.fd, "Polling error. Closing"));
                 this->close_connection(conn);
             }
         }
