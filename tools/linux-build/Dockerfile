@@ -3,7 +3,10 @@
 # <sys/event.h>, etc.) fail to compile here exactly as they would on Linux.
 FROM debian:stable-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Enable multi-arch
+RUN dpkg --add-architecture amd64
+
+RUN apt update && apt install -y --no-install-recommends \
         g++ \
         make \
         valgrind \
@@ -12,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 \
         netcat-traditional \
         curl \
+        libc6:amd64 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /webserv
