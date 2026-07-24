@@ -32,23 +32,19 @@ CgiProcess::~CgiProcess() {
     }
 }
 
-// Split a CGI target into SCRIPT_NAME (up to and including the script file) and
-// PATH_INFO (the trailing path, if any). e.g. "/cgi-bin/x.py/a/b" with ext ".py"
-// -> script_name="/cgi-bin/x.py", path_info="/a/b".
-static void split_cgi_target(const std::string &target, const std::string &ext, std::string &script_name, std::string &path_info) {
+// The SCRIPT_NAME portion of a CGI target: everything up to and including the
+// script file e.g. "/cgi-bin/x.py/a/b" with ext ".py" -> "/cgi-bin/x.py".
+static std::string cgi_script_name(const std::string &target, const std::string &ext) {
     size_t pos = target.find(ext);
     while (pos != std::string::npos) {
         size_t after = pos + ext.size();
         if (after == target.size() || target[after] == '/') {
-            script_name = target.substr(0, after);
-            path_info   = target.substr(after); // "" or "/rest"
-            return;
+            return target.substr(0, after);
         }
         pos = target.find(ext, pos + 1);
     }
 
-    script_name = target; // Fallback: no extension match, treat the whole target as the script name.
-    path_info   = "";
+    return target; // Fallback: no extension match, treat the whole target as the script name.
 }
 
 static std::vector<std::string> build_cgi_env(Connection &conn, const std::string &script_name) {
@@ -92,11 +88,9 @@ static std::vector<std::string> build_cgi_env(Connection &conn, const std::strin
 }
 
 void handle_cgi(Connection &conn) {
-    // Split off any trailing PATH_INFO so we exec the script itself, not
+    // Drop any trailing PATH_INFO so we exec the script itself, not
     // "/cgi-bin/x.py/extra".
-    std::string script_name;
-    std::string path_info;
-    split_cgi_target(conn.req.target, conn.location->cgi_extension, script_name, path_info);
+    std::string script_name = cgi_script_name(conn.req.target, conn.location->cgi_extension);
 
     // A CGI-extension request runs the configured interpreter regardless of
     // whether the script file exists on disk. fs_path is still where the child
