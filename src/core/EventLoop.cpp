@@ -90,7 +90,7 @@ void EventLoop::accept_connection(Listener *from) {
     }
 
     // Set the new client connection to non-blocking mode.
-    fcntl(client_fd, F_SETFL, O_NONBLOCK);
+    set_nonblocking(client_fd);
     // Don't leak other clients' sockets into CGI children.
     set_cloexec(client_fd);
 
@@ -128,7 +128,7 @@ void EventLoop::handle_read(Connection *connection) {
     char buffer[READ_BUFFER_SIZE];
     int fd = connection->fd;
 
-    int recv_res = recv(fd, buffer, sizeof(buffer), 0);
+    ssize_t recv_res = recv(fd, buffer, sizeof(buffer), 0);
     if (recv_res <= 0) {
         if (recv_res == -1) Logger::error(with_fd(fd, "Receiving failed."));
         if (recv_res == 0) Logger::info(with_fd(fd, "Connection closed by peer."));
@@ -162,7 +162,7 @@ void EventLoop::handle_write(Connection *connection) {
 
     size_t to_send = connection->out_buf.size() - connection->sent;
     Logger::debug(with_fd(connection->fd, Str() << "Sending data. Size: " << to_send));
-    int send_res = send(fd, connection->out_buf.data() + connection->sent, to_send, 0);
+    ssize_t send_res = send(fd, connection->out_buf.data() + connection->sent, to_send, 0);
     if (send_res <= 0) {
         if (send_res == -1) Logger::error(with_fd(connection->fd, "Error during while writing to the socket."));
         if (send_res == 0) Logger::warn(with_fd(connection->fd, "No bytes were sent."));

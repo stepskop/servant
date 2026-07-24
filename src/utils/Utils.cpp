@@ -131,7 +131,7 @@ void set_nonblocking(int fd) {
 void set_cloexec(int fd) {
     // Close-on-exec: dropped from the fd on execve, so CGI children don't
     // inherit listeners, other clients' sockets, or other CGI pipes.
-    fcntl(fd, F_SETFD, FD_CLOEXEC);
+    fcntl(fd, F_SETFD, FD_CLOEXEC); // Note: FD_CLOEXEC with F_SETFD doesnt make sense.
 }
 
 // Case-insensitive equality — CGI (and HTTP) header names are case-insensitive.
