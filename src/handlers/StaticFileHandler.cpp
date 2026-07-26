@@ -7,8 +7,10 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
-// Escape HTML metacharacters so filenames/paths can't inject markup into the
-// autoindex page. '&' first, or we'd double-escape the entities below.
+/*
+ * Escape HTML metacharacters so filenames/paths can't inject markup into the
+ * autoindex page. '&' first, or we'd double-escape the entities below.
+ */
 static std::string html_escape(const std::string& in) {
     std::string out;
     out.reserve(in.size());
@@ -54,8 +56,10 @@ static bool build_autoindex(const std::string& dir_path, const std::string& uri,
     return true;
 }
 
-// Read the regular file at `file_path` and respond with it, mapping any
-// read_file failure to the matching error status.
+/*
+ * Read the regular file at `file_path` and respond with it, mapping any
+ * read_file failure to the matching error status.
+ */
 static void serve_file(Connection& conn, const std::string& file_path) {
     Logger::debug(Str() << "Opening the file: " << file_path);
     std::string content;
@@ -68,9 +72,11 @@ static void serve_file(Connection& conn, const std::string& file_path) {
     return conn.send(Response(200).header("Content-Type", get_mime_type(file_path)).body(content));
 }
 
-// Handle a directory request: redirect a missing trailing slash, serve the
-// index file if present, else a listing (autoindex on). With no listing: a
-// configured-but-absent index is 404, an unconfigured index is 403.
+/*
+ * Handle a directory request: redirect a missing trailing slash, serve the
+ * index file if present, else a listing (autoindex on). With no listing: a
+ * configured-but-absent index is 404, an unconfigured index is 403.
+ */
 static void serve_directory(Connection& conn, const std::string& target, const std::string& dir_path) {
     // No trailing slash -> 301 to "/sub/" so relative URLs resolve right.
     if (target[target.size() - 1] != '/') {
@@ -104,6 +110,11 @@ static void serve_directory(Connection& conn, const std::string& target, const s
     return conn.send(Response(200).body(listing));
 }
 
+/*
+ * Serve the request as a static resource: stat the resolved path, dispatch a
+ * directory to serve_directory and a regular file to serve_file, and answer
+ * 404/403 when the path is missing or not a servable type.
+ */
 void serve_static(Connection& conn) {
     Request& req = conn.req;
 

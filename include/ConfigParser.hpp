@@ -6,8 +6,10 @@
 # include <vector>
 # include <cstddef>
 
-// Config lexing + parsing surface: the token stream, the read cursor, and the
-// tokens -> raw-model build. The raw -> typed step lives in ConfigResolver.hpp.
+/*
+ * Config lexing and parsing: the token stream, the read cursor, and the
+ * tokens -> raw-model build. The raw -> typed step lives in ConfigResolver.hpp.
+ */
 
 enum ConfigTokenType { WORD, BLOCK_START, BLOCK_END, TERMINATOR };
 
@@ -17,13 +19,13 @@ typedef struct {
     size_t line;
 } ConfigToken;
 
-// Stage 1: bytes -> flat token stream (Tokenizer.cpp).
+// Lex config bytes into a flat token stream.
 std::vector<ConfigToken> tokenize(const std::string &config_str);
+
+// Dump the token stream, for debugging.
 void                     inspect_tokens(const std::vector<ConfigToken> &tokens);
 
-// Read cursor over a token stream. Centralizes the bounds check so the parser
-// never indexes past the end: every read goes through peek/advance/expect.
-// The expect_* methods throw std::runtime_error on a type mismatch or EOF.
+// Bounds-checked read cursor over a token stream.
 class Cursor {
     const std::vector<ConfigToken> &tokens;
     size_t                          pos;
@@ -31,18 +33,26 @@ class Cursor {
 public:
     explicit Cursor(const std::vector<ConfigToken> &tokens);
 
+    // Whether the cursor is past the last token.
     bool                at_end() const;
-    const ConfigToken  &peek() const;                  // guard with !at_end()
+    // The current token.
+    const ConfigToken  &peek() const;
+    // Whether the current token is of the given type.
     bool                is(ConfigTokenType type) const;
+    // Whether the current token is the given keyword.
     bool                is_word(const char *keyword) const;
 
-    const ConfigToken  &advance();                     // guard with !at_end()
-    size_t              expect(ConfigTokenType type);  // returns consumed line
+    // Consume and return the current token.
+    const ConfigToken  &advance();
+    // Consume a token of the given type, or throw.
+    size_t              expect(ConfigTokenType type);
+    // Consume a word token, or throw.
     std::string         expect_word();
+    // Consume the given keyword, or throw.
     void                expect_keyword(const char *keyword);
 };
 
-// Stage 2a: tokens -> raw model, verbatim, no defaults (ConfigParser.cpp).
+// Parse a token stream into the raw config model.
 RawConfig parse_config(const std::vector<ConfigToken> &tokens);
 
 #endif

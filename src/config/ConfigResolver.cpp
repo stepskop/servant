@@ -9,8 +9,10 @@
 #include <utility>
 #include <vector>
 
-// "N", "10k", "5m", "1g" -> bytes. Rejects other suffixes / junk; guards
-// overflow. Directive-agnostic: errors describe the size value, not the caller.
+/*
+ * "N", "10k", "5m", "1g" -> bytes. Rejects other suffixes / junk; guards
+ * overflow. Directive-agnostic: errors describe the size value, not the caller.
+ */
 static std::size_t to_bytes(const std::string &raw) {
     size_t mult = 1;
     std::string digits = raw;
@@ -64,8 +66,10 @@ static void resolve_listen(const std::string &listen, ServerConfig &out) {
     out.port = port;
 }
 
-// Validate + convert raw (code, path) pairs into the typed map. Later entries
-// for the same code win (matches directive order).
+/*
+ * Validate + convert raw (code, path) pairs into the typed map. Later entries
+ * for the same code win (matches directive order).
+ */
 static void resolve_error_pages(const std::vector<std::pair<std::string, std::string> > &raw, std::map<int, std::string> &out) {
     for (size_t i = 0; i < raw.size(); i++) {
         std::string raw_code = raw[i].first;
@@ -79,6 +83,10 @@ static void resolve_error_pages(const std::vector<std::pair<std::string, std::st
     }
 }
 
+/*
+ * Validate one raw location block and fill in the values it inherits from the
+ * server, producing a typed LocationConfig ready for the router.
+ */
 static LocationConfig resolve_location(const RawLocationConfig &raw, const ServerConfig &server) {
     LocationConfig loc;
 
@@ -142,6 +150,10 @@ static LocationConfig resolve_location(const RawLocationConfig &raw, const Serve
     return loc;
 }
 
+/*
+ * Resolve one server block: split listen into host/port, apply index/body-size
+ * defaults, resolve its locations.
+ */
 static ServerConfig resolve_server(const RawServerConfig &raw) {
     ServerConfig server;
 
@@ -174,6 +186,7 @@ static ServerConfig resolve_server(const RawServerConfig &raw) {
     return server;
 }
 
+// Resolve the whole raw config into the typed Config the runtime reads.
 Config resolve(const RawConfig &raw) {
     if (raw.servers.empty()) throw std::runtime_error("Config must define at least one server block");
 

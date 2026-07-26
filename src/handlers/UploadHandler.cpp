@@ -4,9 +4,11 @@
 #include <fstream>
 #include <sys/stat.h>
 
-// Reduce a client-supplied filename to a bare basename: drop everything up to
-// the last '/' or '\', reject empty / "." / "..". Prevents an upload escaping
-// upload_dir regardless of what the client sends.
+/*
+ * Reduce a client-supplied filename to a bare basename: drop everything up to
+ * the last '/' or '\', reject empty / "." / "..". Prevents an upload escaping
+ * upload_dir regardless of what the client sends.
+ */
 static bool safe_basename(const std::string &raw, std::string &out) {
     std::string::size_type cut = raw.find_last_of("/\\");
     out = (cut == std::string::npos) ? raw : raw.substr(cut + 1);
@@ -16,9 +18,11 @@ static bool safe_basename(const std::string &raw, std::string &out) {
     return true;
 }
 
-// Pull the filename="..." token out of a part's header block. The token is only
-// honored on the Content-Disposition line, so a stray filename=" in any other
-// header can't be mistaken for the upload name.
+/*
+ * Pull the filename="..." token out of a part's header block. The token is only
+ * honored on the Content-Disposition line, so a stray filename=" in any other
+ * header can't be mistaken for the upload name.
+ */
 static bool disposition_filename(const std::string &headers, std::string &out) {
     std::vector<std::string> lines = split(headers, CRLF);
     for (std::vector<std::string>::size_type i = 0; i < lines.size(); ++i) {
@@ -40,9 +44,11 @@ static bool disposition_filename(const std::string &headers, std::string &out) {
     return false;
 }
 
-// Extract the first file part (name + bytes) from a multipart/form-data body.
-// `boundary` is the raw token from the Content-Type header (without leading --).
-// Supports at least one file per request, which is all Phase 4 requires.
+/*
+ * Extract the first file part (name + bytes) from a multipart/form-data body.
+ * `boundary` is the raw token from the Content-Type header (without leading --).
+ * Supports at least one file per request, which is all Phase 4 requires.
+ */
 static bool parse_multipart(const std::string &body, const std::string &boundary, std::string &name, std::string &content) {
     const std::string delim = "--" + boundary;
 
@@ -87,6 +93,11 @@ static bool parse_multipart(const std::string &body, const std::string &boundary
     return false;
 }
 
+/*
+ * Store the POST body under the location's upload_dir: extract the file from a
+ * multipart/form-data part (or take the raw body), sanitize the filename, write
+ * it into the matching subdirectory, and answer 201 with the resource URL.
+ */
 void upload_file(Connection &conn) {
     Request &req = conn.req;
 

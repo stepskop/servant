@@ -6,9 +6,11 @@
 #include <climits>
 #include <sys/fcntl.h>
 
-// Read the whole file at `path` into `out`. Returns 200 on success, 403 if it
-// can't be opened, 500 on a read error mid-stream. Opened in binary mode so
-// served bytes (images, etc.) are not mangled.
+/*
+ * Read the whole file at `path` into `out`. Returns 200 on success, 403 if it
+ * can't be opened, 500 on a read error mid-stream. Opened in binary mode so
+ * served bytes (images, etc.) are not mangled.
+ */
 int read_file(const std::string &path, std::string &out) {
     std::ifstream file(path.c_str(), std::ios::binary);
     if (!file.is_open()) return 403;
@@ -25,6 +27,7 @@ Str::operator std::string() const {
     return ss.str();
 }
 
+// Split s on each occurrence of delimiter; always yields at least one token.
 std::vector<std::string> split(std::string s, const std::string& delimiter) {
     std::vector<std::string> tokens;
     size_t pos = 0;
@@ -39,6 +42,7 @@ std::vector<std::string> split(std::string s, const std::string& delimiter) {
     return tokens;
 }
 
+// Value for key in map, or an empty string if the key is absent.
 std::string get_value(const std::map<std::string, std::string> &map, const std::string &key) {
     std::map<std::string, std::string>::const_iterator it = map.find(key);
 
@@ -55,8 +59,10 @@ bool is_digits(const std::string &s) {
     return true;
 }
 
-// Parse optional-signed decimal into long. Rejects junk and overflow.
-// Returns false on empty, bad char, or out-of-range.
+/*
+ * Parse optional-signed decimal into long. Rejects junk and overflow.
+ * Returns false on empty, bad char, or out-of-range.
+ */
 bool safe_atol(const std::string &s, long &out) {
     size_t i = 0;
     bool neg = false;
@@ -84,9 +90,11 @@ bool safe_atol(const std::string &s, long &out) {
     return true;
 }
 
-// Lexically collapse "." and ".." segments of an absolute URL path.
-// Pure string work — no FS access, so symlinks/missing files don't matter.
-// Returns false if a ".." would pop above root (e.g. "/../etc/passwd").
+/*
+ * Lexically collapse "." and ".." segments of an absolute URL path.
+ * Pure string work — no FS access, so symlinks/missing files don't matter.
+ * Returns false if a ".." would pop above root (e.g. "/../etc/passwd").
+ */
 bool normalize_path(const std::string &path, std::string &out) {
     std::vector<std::string> stack;
     std::vector<std::string> segments = split(path, "/");
@@ -145,6 +153,7 @@ bool insensitive_equals(const std::string &a, const std::string &b) {
     return true;
 }
 
+// Return a lowercased (ASCII) copy of s.
 std::string to_lower(std::string s) {
     for (size_t i = 0; i < s.size(); i++) {
         s[i] = std::tolower(static_cast<unsigned char>(s[i]));

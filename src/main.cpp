@@ -9,6 +9,11 @@
 #include "Logger.hpp"
 #include "Utils.hpp"
 
+/*
+ * Entry point: load the config, group servers by host:port (the first is the
+ * default, the rest are virtual hosts), start one listener per group, and run
+ * the event loop.
+ */
 int main(int argc, char** argv) {
     if (argc > 2) {
         Logger::error("Usage: ./webserv [config file]");
@@ -41,7 +46,7 @@ int main(int argc, char** argv) {
     ServerMap servers;
     for (size_t i = 0; i < config.servers.size(); i++) {
         ServerConfig &configured_server = config.servers[i];
-        std::string key = Str() << configured_server.host << ":" << configured_server.port; // TODO: There can be conflict as 0.0.0.0:80 and 127.0.0.1:80.
+        std::string key = Str() << configured_server.host << ":" << configured_server.port; // There can be conflict as 0.0.0.0:80 and 127.0.0.1:80
 
         servers[key].push_back(&configured_server);
     }

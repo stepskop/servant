@@ -54,16 +54,35 @@ flowchart TD
     cgi -- "in flight" --> poll
 
     write -- "partial" --> poll
-    write -- "fully sent" --> close["close connection"]
+    write -- "fully sent, keep-alive" --> poll
+    write -- "fully sent, close" --> close["close connection"]
 ```
 
 A `Connection` is a small state machine driven by `EventLoop`:
-`READING_HEADERS → READING_BODY → PROCESSING → WRITING → CLOSING`, with CGI
-requests detouring through `WAITING_CGI` between `PROCESSING` and `WRITING`.
+`READING_HEADERS → READING_BODY → WRITING`, with CGI requests detouring through
+`WAITING_CGI` before `WRITING`. There is no explicit closing state — a finished
+connection is simply destroyed.
 
 `resolve_poll_event()` maps the current state to the poll flags the loop should
 wait on (`POLLIN` while reading, `POLLOUT` while writing, nothing otherwise), so
 a connection is only woken when it can make progress.
+
+#### Flow of a request
+Every request moves through the same phases, one poll event at a time:
+
+1. **Accept** — a new connection is accepted and starts out reading headers.
+2. **Read & frame** — incoming bytes are buffered until a complete request
+   (headers, then body) is in hand; a partial request just waits for the next read.
+3. **Route** — the request is matched to a server and location, its method is
+   checked, and it is handed to the handler that owns it (static file, upload,
+   delete, or CGI).
+4. **Respond** — the handler builds a response, serialized into the connection's
+   output buffer.
+5. **Write & recycle** — the response is written back; on keep-alive the
+   connection resets and waits for the next request, otherwise it closes.
+
+Because `poll()` only wakes a connection for the step it can currently make
+progress on, one thread interleaves many requests at once.
 
 ### Framing
 
@@ -73,7 +92,7 @@ a connection is only woken when it can make progress.
   malformed or oversized headers get a `400`.
 - **Body** — read up to `Content-Length`, capped at the matched location's
   `client_max_body_size` (from config → `413`). Chunked transfer-encoding is
-  currently rejected with `501`.
+  decoded incrementally, enforcing the same size cap.
 - Pipelined bytes past the body are kept in the buffer for the next request.
 
 It returns `true` only once a full request is framed and ready to serve.
@@ -96,7 +115,7 @@ target (matched on segment boundaries, trailing slash ignored). `route()` then:
 A request matching a CGI location runs a script through its `cgi_interpreter`
 via `fork()` + `execve()` without blocking the loop: the child's stdin/stdout
 pipes join the poll set, the request body is streamed in and the output read
-back until EOF, then the child is reaped with `waitpid(WNOHANG)`. Its output is
+back until EOF, then the child is finished with `waitpid(WNOHANG)`. Its output is
 split at the first blank line — CGI headers (incl. `Status:`/`Location:`) merge
 into the response, the rest is the body. A script that overruns its deadline is
 killed and answered `504`; other failures map to `404`/`403`/`500`/`502`.
@@ -112,9 +131,10 @@ conn.send(Response(301).header("Location", target + "/"));
 conn.send(Response(404));   // body auto-filled from the location's error_page, or a default
 ```
 
-`send()` serializes to the wire form (always emitting `Connection: close` and
-`Content-Length`) and, for a bodyless error status, serves the configured
-custom `error_page` file if one is set, falling back to a built-in page.
+`send()` stamps the `Connection` header (`keep-alive` or `close`), serializes to
+the wire form (with the right `Content-Length`), and — for a bodyless error
+status — serves the configured custom `error_page` file if one is set, falling
+back to a built-in page.
 
 ## Layout
 
@@ -136,7 +156,7 @@ tools/linux-build/  Docker wrapper to build/test on Linux from macOS
 
 | Component | Responsibility |
 |-----------|----------------|
-| `EventLoop` | Owns all `Listener`s and `Connection`s. Builds the pollfd set each tick, dispatches readable/writable FDs, accepts new clients, reaps dead ones. Catches `SIGINT`/`SIGTERM` for clean shutdown. |
+| `EventLoop` | Owns all `Listener`s and `Connection`s. Builds the pollfd set each tick, dispatches readable/writable FDs, accepts new clients, cleans up dead ones. Catches `SIGINT`/`SIGTERM` for clean shutdown. |
 | `Listener` | A bound, listening socket for one `host:port`. |
 | `Connection` | Per-client state: `fd`, in/out buffers, `state`, parsed `Request`, matched server/location. Frames requests via `consume()`, queues output via `send()`. |
 | `Request` | Parsed method, target, query, version, lowercased headers, body. |
@@ -146,18 +166,5 @@ tools/linux-build/  Docker wrapper to build/test on Linux from macOS
 | `StaticFileHandler` | Serves a file under the matched location's `root`, using its `index` for directories, or an autoindex listing. |
 | `UploadHandler` | Handles `POST` — multipart and raw bodies → `201` with a `Location` for the created resource. |
 | `DeleteHandler` | Handles `DELETE` — `204`/`404`/`403`, traversal-guarded. |
-| `Cgi` / `CgiProcess` | Launches a CGI child (fork/execve), owns its pipe fds + pid + deadline, and parses its output into a `Response`. Pipes are driven by the poll loop; the child is reaped and killed-on-timeout. |
+| `Cgi` / `CgiProcess` | Launches a CGI child (fork/execve), owns its pipe fds + pid + deadline, and parses its output into a `Response`. Pipes are driven by the poll loop; the child is cleaned up and killed-on-timeout. |
 | `Logger` / `Utils` | Logging and string/file helpers shared across the codebase. |
-
-## WIP Notes
-
-- `SIGPIPE` is ignored so a write to a closed socket fails the `send()` instead
-  of killing the process.
-- `poll()` blocks indefinitely (`-1`) when idle; while a CGI child is running the
-  timeout shrinks to its nearest deadline so a runaway script hits its `504`. A
-  signal interrupts `poll()` (`EINTR`) so the loop can recheck the shutdown flag.
-- `GET` (static + autoindex), `POST` (upload), and `DELETE` are all handled;
-  CGI runs through the poll loop. Chunked transfer-encoding is still rejected
-  with `501` (unchunking is the next piece).
-- Keep-alive is not yet wired up — every response carries `Connection: close`
-  and the connection closes after one response.

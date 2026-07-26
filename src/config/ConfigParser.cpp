@@ -13,7 +13,10 @@ static std::string parse_single_value(Cursor &cursor) {
     return value;
 }
 
-// location <path> { ... }
+/*
+ * Parse a `location <path> { ... }` block into a RawLocationConfig, reading its
+ * directives verbatim until the closing brace.
+ */
 static RawLocationConfig parse_location(Cursor &cursor) {
     RawLocationConfig loc;
 
@@ -67,7 +70,10 @@ static RawLocationConfig parse_location(Cursor &cursor) {
     }
 }
 
-// server { ... }
+/*
+ * Parse a `server { ... }` block into a RawServerConfig, dispatching each
+ * directive (including nested location blocks) until the closing brace.
+ */
 static RawServerConfig parse_server(Cursor &cursor) {
     RawServerConfig server;
 

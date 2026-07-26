@@ -7,6 +7,10 @@
 #include <string>
 #include <vector>
 
+/*
+ * Map a request URL path to a filesystem path: append it to root, or substitute
+ * the matched location prefix with the alias when one is set.
+ */
 std::string LocationConfig::fs_path(const std::string &url_path) const {
     if (this->alias.empty()) {
         return this->root + url_path;
@@ -24,6 +28,10 @@ std::string LocationConfig::fs_path(const std::string &url_path) const {
     return this->alias + rest;
 }
 
+/*
+ * Read, tokenize, parse and resolve the config file at path into config.
+ * Returns 1 on success, -1 if the file can't be read or the config is invalid.
+ */
 int load_config(const std::string &path, Config &config) {
     std::string source;
     if (read_file(path, source) != 200) return -1;

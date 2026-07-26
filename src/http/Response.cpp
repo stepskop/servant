@@ -3,28 +3,37 @@
 #include "Utils.hpp"
 #include <sstream>
 
+// Start a response with the given status; Content-Type defaults to text/html.
 Response::Response(size_t status) : status(status) {
     this->headers["Content-Type"] = "text/html";
 }
 
+// Set the response body.
 Response& Response::body(const std::string& content) {
     this->body_str = content;
     return *this;
 }
 
+// Set or overwrite a header.
 Response& Response::header(const std::string& key, const std::string& value) {
     this->headers[key] = value;
     return *this;
 }
 
+// The status code.
 size_t Response::get_status() const {
     return this->status;
 }
 
+// Whether a non-empty body has been set.
 bool Response::has_body() const {
     return !this->body_str.empty();
 }
 
+/*
+ * Render the response to its HTTP/1.1 wire form. Supplies a default error page
+ * when a 4xx+ carries no body, and drops the body for bodiless statuses and HEAD.
+ */
 std::string Response::serialize(bool exclude_body) const {
     std::string out_body = this->body_str;
 

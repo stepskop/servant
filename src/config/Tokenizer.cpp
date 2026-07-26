@@ -27,6 +27,10 @@ static bool is_word_char(char c) {
     return true;
 }
 
+/*
+ * Lex config bytes into a flat token stream of words, braces and terminators,
+ * skipping whitespace and `#` comments while tracking line numbers for errors.
+ */
 std::vector<ConfigToken> tokenize(const std::string &config_str) {
     std::vector<ConfigToken> tokens;
     size_t line = 1;
@@ -84,6 +88,7 @@ static const char *token_type_name(ConfigTokenType type) {
     return "UNKNOWN";
 }
 
+// Log the token stream at debug level for troubleshooting the parser.
 void inspect_tokens(const std::vector<ConfigToken> &tokens) {
     std::ostringstream ss;
 

@@ -18,47 +18,56 @@
 
 enum ConnectionState { READING_HEADERS, READING_BODY, WAITING_CGI, WRITING };
 
+/*
+ * One client connection: its socket, the request being read, the response
+ * being written, and any CGI child in between.
+ */
 class Connection {
     public:
         ~Connection();
         Connection(int fd, const std::vector<const ServerConfig*>* server_group);
+
+        // Client socket fd.
         int fd;
-        // Default server for the listener this connection arrived on. Phase 4
-        // refines per-request via Host header; for now it drives root/index/
-        // client_max_body_size.
+        // Default server for the listener this connection arrived on.
         const ServerConfig *server;
+        // Location matched for the current request.
         const LocationConfig *location;
+        // Servers bound to the arrival listener, for per-request refinement.
         const std::vector<const ServerConfig*> *server_group;
+        // Where the connection is in the read/serve/write cycle.
         ConnectionState state;
+        // Bytes received but not yet framed into a request.
         std::string in_buf;
+        // Serialized response bytes pending write.
         std::string out_buf;
+        // Bytes of out_buf already written.
         size_t sent;
+        // The request currently being read or served.
         Request req;
+        // Status of the response being sent.
         size_t res_status;
+        // Active CGI child, or NULL when none.
         CgiProcess *cgi;
+        // Whether the connection stays open after this response.
         bool keep_alive;
+        // Timestamp of the last I/O, for timeout enforcement.
         time_t last_activity;
 
+        // Queue a response for writing.
         void send(Response res);
-        // Send an error response that abandons request framing: forces the
-        // connection closed so leftover/unread bytes are never reparsed as a
-        // new request. Use when framing is undecodable (400/501), the body was
-        // left unread (408/413), or processing aborted (504).
+        // Send an error response and close the connection.
         void fail(Response res);
-        // Append freshly-received bytes, then advance framing. Returns true when
-        // a full request is buffered and ready to serve.
+        // Take newly received bytes and advance request framing.
         bool consume(const char* data, size_t len);
-        // Advance the request framing state machine over in_buf without reading
-        // new bytes. Re-entry point for a pipelined request already buffered
-        // after the previous one was served (poll won't wake us for bytes we
-        // already hold). Returns true when a full request is buffered.
+        // Advance request framing over already-buffered bytes.
         bool frame();
+        // Whether this request needs a CGI child registered with the loop.
         bool should_register_cgi() const;
-        // Tear down the CGI child: delete the process (dtor closes its fds and
-        // reaps the child) and clear the pointer. Idempotent. The owning
-        // EventLoop must unregister the fds from its poll set first.
+        // Stop and clean up the CGI child.
         void teardown_cgi();
 
+        // Reset per-request state to read the next request on a kept-alive conn.
         void reset();
     private:
         Connection(const Connection& src);

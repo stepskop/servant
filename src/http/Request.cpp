@@ -9,6 +9,10 @@
 
 Request::Request(): body_size(0), initialized(false), chunked(false) {}
 
+/*
+ * Parse the request line and headers into req. Returns 200 on success, or the
+ * HTTP status of the first framing error encountered.
+ */
 int parse_header(const std::string &block, Request &req) {
     std::vector<std::string> lines = split(block, CRLF);
     std::string first_line = lines[0];
@@ -118,11 +122,13 @@ static bool parse_hex(const std::string &s, size_t &out) {
     return true;
 }
 
-// Unchunks a chunked body sitting at the front of data.
-//   0   -> incomplete, read more
-//   200 -> complete: req.body filled, in_buf advanced past the chunked stream
-//   400 -> malformed
-//   413 -> total body exceeds max_body
+/*
+ * Unchunks a chunked body sitting at the front of data.
+ *   0   -> incomplete, read more
+ *   200 -> complete: req.body filled, in_buf advanced past the chunked stream
+ *   400 -> malformed
+ *   413 -> total body exceeds max_body
+ */
 int unchunk_data(std::string &in_buf, Request &req, size_t max_body) {
     size_t pos = 0;
     while (true) {

@@ -27,6 +27,7 @@ static void on_stop_signal(int) {
     g_stop = 1;
 }
 
+// Delete every connection and listener the loop owns.
 EventLoop::~EventLoop() {
     for (std::map<int, Connection*>::iterator it = this->connections.begin(); it != this->connections.end(); it++)
         delete it->second;
@@ -34,6 +35,7 @@ EventLoop::~EventLoop() {
         delete it->second;
 }
 
+// The poll events to watch for a connection in the given state.
 short resolve_poll_event(ConnectionState state) {
     switch (state) {
         case READING_HEADERS:
@@ -47,9 +49,11 @@ short resolve_poll_event(ConnectionState state) {
     }
 }
 
-// Seconds of allowed inactivity for a connection in the given state.
-// Returns -1 for "no client-side timeout" (WAITING_CGI: the CgiProcess
-// deadline owns that period; the client socket is parked by design).
+/*
+ * Seconds of allowed inactivity for a connection in the given state.
+ * Returns -1 for "no client-side timeout" (WAITING_CGI: the CgiProcess
+ * deadline owns that period; the client socket is parked by design).
+ */
 static time_t timeout_for(const Connection &conn) {
     switch (conn.state) {
         case READING_HEADERS:
@@ -67,6 +71,7 @@ static time_t timeout_for(const Connection &conn) {
     }
 }
 
+// Create and start a listener for the server group, registering it on success.
 void EventLoop::add_listener(std::vector<const ServerConfig*> &server_group) {
     Listener *listener = new Listener(server_group);
 
@@ -79,6 +84,7 @@ void EventLoop::add_listener(std::vector<const ServerConfig*> &server_group) {
     this->listeners.insert(std::make_pair(listener->fd, listener));
 }
 
+// Accept a pending client on the listener and register a new Connection for it.
 void EventLoop::accept_connection(Listener *from) {
     Logger::debug(with_fd(from->fd, "Checking for new connections."));
     int client_fd = accept(from->fd, NULL, NULL);
@@ -101,6 +107,7 @@ void EventLoop::accept_connection(Listener *from) {
     Logger::debug(with_fd(client_fd, "Connection accepted."));
 }
 
+// Unregister and destroy a connection, dropping its CGI fds first.
 void EventLoop::close_connection(Connection *connection) {
     Logger::debug(with_fd(connection->fd, "Closing the connection."));
     this->unregister_cgi(connection); // Drop cgi fds before ~Connection frees them (avoids dangling cgi_fds keys).
@@ -108,7 +115,11 @@ void EventLoop::close_connection(Connection *connection) {
     delete connection;
 }
 
-void EventLoop::serve(Connection *connection) {
+/*
+ * Route the framed request and, if it spawned a CGI child, register its pipes —
+ * closing stdin at once when there's no body to send so the child sees EOF.
+ */
+void EventLoop::dispatch(Connection *connection) {
     route(*connection);
 
     if (connection->should_register_cgi()) {
@@ -124,6 +135,10 @@ void EventLoop::serve(Connection *connection) {
     }
 }
 
+/*
+ * Read available bytes from the client (closing on EOF or error), frame the
+ * request, and dispatch it once a full request is buffered.
+ */
 void EventLoop::handle_read(Connection *connection) {
     char buffer[READ_BUFFER_SIZE];
     int fd = connection->fd;
@@ -138,13 +153,18 @@ void EventLoop::handle_read(Connection *connection) {
 
     connection->last_activity = std::time(NULL);
 
-    // Frame the request; serve only once a full request is buffered.
-    bool can_serve = connection->consume(buffer, recv_res);
-    if (!can_serve) return;
+    // Frame the request; dispatch only once a full request is buffered.
+    bool can_be_dispatched = connection->consume(buffer, recv_res);
+    if (!can_be_dispatched) return;
 
-    this->serve(connection);
+    this->dispatch(connection);
 }
 
+/*
+ * Flush buffered response bytes to the client. On completion, close the
+ * connection or, if keep-alive, reset and dispatch any pipelined request
+ * already buffered. Logs one line per response.
+ */
 void EventLoop::handle_write(Connection *connection) {
     int fd = connection->fd;
 
@@ -176,11 +196,15 @@ void EventLoop::handle_write(Connection *connection) {
 
         connection->reset();
 
-        // If there is some data in the ingress buffer and it can form an request, serve it.
-        if (!connection->in_buf.empty() && connection->frame()) this->serve(connection);
+        // If there is some data in the ingress buffer and it can form an request, dispatch it.
+        if (!connection->in_buf.empty() && connection->frame()) this->dispatch(connection);
     }
 }
 
+/*
+ * Read a chunk of the child's stdout: accumulate output, finish the exchange on
+ * EOF, or fail it on a read error.
+ */
 void EventLoop::cgi_read(Connection *conn) {
     CgiProcess *cgi_process = conn->cgi;
     char buffer[READ_BUFFER_SIZE];
@@ -201,6 +225,10 @@ void EventLoop::cgi_read(Connection *conn) {
     this->cgi_finish(conn);
 }
 
+/*
+ * Write the next slice of the request body to the child's stdin; stop writing
+ * once the body is delivered or the pipe breaks.
+ */
 void EventLoop::cgi_write(Connection *conn) {
     CgiProcess *cgi_process = conn->cgi;
     size_t left = cgi_process->in_buf.size() - cgi_process->in_sent;
@@ -219,8 +247,10 @@ void EventLoop::cgi_write(Connection *conn) {
     if (cgi_process->in_sent == cgi_process->in_buf.size()) this->cgi_stop_writing(conn);
 }
 
-// Close the CGI stdin pipe (child sees EOF) and stop polling it for writes.
-// Idempotent: safe whether the body was fully sent or a write hit EPIPE.
+/*
+ * Close the CGI stdin pipe (child sees EOF) and stop polling it for writes.
+ * Idempotent: safe whether the body was fully sent or a write hit EPIPE.
+ */
 void EventLoop::cgi_stop_writing(Connection *conn) {
     CgiProcess *cgi_process = conn->cgi;
     if (cgi_process->stdin_fd == -1) return;
@@ -229,12 +259,18 @@ void EventLoop::cgi_stop_writing(Connection *conn) {
     cgi_process->stdin_fd = -1;
 }
 
+// Remove the connection's CGI pipe fds from the poll set.
 void EventLoop::unregister_cgi(Connection *conn) {
     if (!conn->cgi) return;
     this->cgi_fds.erase(conn->cgi->stdin_fd);
     this->cgi_fds.erase(conn->cgi->stdout_fd);
 }
 
+/*
+ * Finalize a completed CGI exchange: collect the child's exit status if it has
+ * already exited, then turn its output into a response (502 on a nonzero exit
+ * or signal).
+ */
 void EventLoop::cgi_finish(Connection *conn) {
     unregister_cgi(conn);
 
@@ -258,6 +294,7 @@ void EventLoop::cgi_finish(Connection *conn) {
     conn->send(ok ? parse_cgi_output(raw) : Response(502));
 }
 
+// Abort a broken CGI exchange and answer 502.
 void EventLoop::cgi_fail(Connection *conn) {
     this->unregister_cgi(conn);
 
@@ -265,8 +302,11 @@ void EventLoop::cgi_fail(Connection *conn) {
     conn->send(Response(502));
 }
 
-// Smallest ms until any connection state or CGI hits its timeout. -1 (block forever) when
-// none are running; 0 when one is already past due so poll() returns at once.
+/*
+ * Smallest ms until any connection state or CGI hits its timeout. -1 (block
+ * forever) when none are running; 0 when one is already past due so poll()
+ * returns at once.
+ */
 int EventLoop::next_timeout_ms() {
     int timeout = -1;
     time_t now = std::time(NULL);
@@ -293,6 +333,10 @@ int EventLoop::next_timeout_ms() {
     return timeout;
 }
 
+/*
+ * Close out anything past its deadline: 504 for a timed-out CGI, 408 for a
+ * stalled in-flight request, and a silent close for an idle keep-alive.
+ */
 void EventLoop::check_timeouts() {
     time_t now = std::time(NULL);
 
@@ -305,7 +349,7 @@ void EventLoop::check_timeouts() {
             Logger::warn(with_fd(conn->fd, "CGI timed out. Killing."));
 
             this->unregister_cgi(conn);
-            conn->teardown_cgi(); // SIGKILL + waitpid reaps the runaway child.
+            conn->teardown_cgi(); // SIGKILL + waitpid cleans up the runaway child.
 
             conn->fail(Response(504));
         } else {
@@ -323,6 +367,22 @@ void EventLoop::check_timeouts() {
     }
 }
 
+/*
+ * The server's heart: a single-threaded, non-blocking event loop. One poll()
+ * call multiplexes every listener socket, client connection and CGI pipe, so a
+ * single process serves many connections at once without threads.
+ *
+ * Each iteration:
+ *   1. Rebuild the pollfd set from the fds currently in play.
+ *   2. poll() until an fd is ready or the nearest deadline expires.
+ *   3. Service each ready fd:
+ *        - listener  -> accept a new client
+ *        - client    -> read the request / write the response
+ *        - CGI pipe  -> feed the body in / read the output out
+ *   4. check_timeouts() closes out anything past its deadline.
+ *
+ * Runs until SIGINT/SIGTERM sets the stop flag.
+ */
 int EventLoop::run() {
     if (this->listeners.size() <= 0) {
         Logger::error("No listeners to start with");
@@ -373,9 +433,19 @@ int EventLoop::run() {
             fds.push_back(cgi_pfd);
         }
 
-        // Poll the FDs. Timeout is the nearest CGI deadline (-1 = block forever
-        // when no CGI is running), so a hung child is reaped promptly.
         Logger::debug("Polling.");
+        /*
+         * The one blocking point in the loop (poll() is the select() equivalent):
+         * sleeps until an fd is ready or the timeout fires, so the process burns
+         * no CPU while idle.
+         *   - timeout: next_timeout_ms() — the nearest connection or CGI
+         *     deadline, or -1 to sleep until an fd wakes us when nothing is
+         *     time-bound.
+         *   - returns: the number of ready fds, or -1 on error.
+         *   - EINTR: a signal arrived mid-wait -> loop back and re-check g_stop.
+         *
+         * Why not select(): poll() is newer, can work with FD of larger value (higher number).
+         */
         int ready_n = poll(&fds[0], fds.size(), this->next_timeout_ms());
         Logger::debug("Polled.");
         if (ready_n == -1) {

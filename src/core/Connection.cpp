@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <ctime>
 
+// Set up a connection on an accepted socket; the default server is the group's first.
 Connection::Connection(int fd, const std::vector<const ServerConfig*> *server_group)
     :   fd(fd),
         server((*server_group)[0]),
@@ -22,20 +23,27 @@ Connection::Connection(int fd, const std::vector<const ServerConfig*> *server_gr
         keep_alive(false),
         last_activity(std::time(NULL)) {}
 
+// Tear down the connection: stop any CGI child and close the socket.
 Connection::~Connection() {
     this->teardown_cgi();
     close(this->fd);
 }
 
+// Delete the CGI child (its dtor closes fds and cleans it up) and clear the pointer.
 void Connection::teardown_cgi() {
     delete this->cgi;
     this->cgi = NULL;
 }
 
+// Whether a CGI child is live and waiting to be registered with the event loop.
 bool Connection::should_register_cgi() const {
     return this->state == WAITING_CGI && this->cgi != NULL;
 }
 
+/*
+ * Finalize a response and queue it for writing: serve a configured error page
+ * for a bodiless 4xx+, stamp the Connection header, and omit the body for HEAD.
+ */
 void Connection::send(Response res) {
     size_t status = res.get_status();
 
@@ -69,16 +77,26 @@ void Connection::send(Response res) {
     this->state = WRITING;
 }
 
+/*
+ * Send a response and force the connection closed, so leftover unframed bytes
+ * are never reparsed as a new request.
+ */
 void Connection::fail(Response res) {
     this->keep_alive = false; // Framing abandoned -> don't reparse leftover bytes.
     this->send(res);
 }
 
+// Append newly received bytes to the input buffer and try to frame a request.
 bool Connection::consume(const char* data, size_t len) {
     this->in_buf.append(data, len);
     return this->frame();
 }
 
+/*
+ * Advance the request framing state machine over the input buffer: parse the
+ * header block, then read the body (fixed-length or chunked). Returns true once
+ * a full request is buffered, false while more bytes are needed.
+ */
 bool Connection::frame() {
     std::string header_end = Str() << CRLF << CRLF;
     size_t pos = this->in_buf.find(header_end);
@@ -163,6 +181,7 @@ bool Connection::frame() {
     return true; // Fully framed -> ready to serve.
 }
 
+// Clear per-request state so the next request on a kept-alive connection starts clean.
 void Connection::reset() {
     this->req = Request();
     this->out_buf.clear();

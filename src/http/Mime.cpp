@@ -23,6 +23,10 @@ static const MimeEntry MIME_TABLE[] = {
     { "txt",  "text/plain" },
 };
 
+/*
+ * Look up the Content-Type for a path from its file extension, falling back to
+ * "application/octet-stream" for unknown or extension-less paths.
+ */
 std::string get_mime_type(const std::string& path) {
     // Find the extension: text after the last '.', but only if that '.'
     // comes after the last '/' (so "/a.b/file" with no dot -> no extension).

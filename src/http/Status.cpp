@@ -1,6 +1,7 @@
 #include "Status.hpp"
 #include <string>
 
+// Map an HTTP status code to its reason phrase; "Unknown" for codes not listed.
 std::string get_status_string(size_t status) {
     switch (status) {
         case 200: return "OK";

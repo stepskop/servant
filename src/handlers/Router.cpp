@@ -17,9 +17,11 @@ static const ServerConfig* select_server(const std::vector<const ServerConfig*> 
     return server_group[0]; // Fall back to first
 }
 
-// A path location matches a target only on a segment boundary: "/up" must
-// not match "/uploads", while "/uploads" matches "/uploads" and "/uploads/x".
-// A trailing slash on the configured path is ignored ("/uploads/" == "/uploads").
+/*
+ * A path location matches a target only on a segment boundary: "/up" must
+ * not match "/uploads", while "/uploads" matches "/uploads" and "/uploads/x".
+ * A trailing slash on the configured path is ignored ("/uploads/" == "/uploads").
+ */
 static bool location_matches(const std::string &path, const std::string &target) {
     // Root matches anything
     if (path == "/") return true;
@@ -37,6 +39,7 @@ static bool location_matches(const std::string &path, const std::string &target)
     return ends_at_target || ends_at_segment;
 }
 
+// Pick the location whose path is the longest prefix match of the target.
 static const LocationConfig* select_location(const ServerConfig &server, const std::string &target) {
     const LocationConfig *best_match = NULL;
     size_t best_length = 0;
@@ -59,10 +62,12 @@ static const LocationConfig* select_location(const ServerConfig &server, const s
     return best_match;
 }
 
+// Whether the location permits the request method.
 static bool is_method_allowed(const LocationConfig &location, const std::string &method) {
     return location.methods.count(method) > 0;
 }
 
+// Whether the target hits this location's CGI extension on a path-segment boundary.
 static bool is_cgi(const LocationConfig &location, const std::string &target) {
     std::string ext = location.cgi_extension;
 
@@ -79,12 +84,18 @@ static bool is_cgi(const LocationConfig &location, const std::string &target) {
     return false;
 }
 
+// Select the server (by Host header) and location (by path) for the request.
 void resolve(Connection &conn) {
     std::string host = get_value(conn.req.headers, "host");
     conn.server = select_server(*conn.server_group, host);
     conn.location = select_location(*conn.server, conn.req.target);
 }
 
+/*
+ * Dispatch the resolved request: enforce the location's allowed methods (405 +
+ * Allow), apply a configured redirect, then hand off to the CGI or the
+ * GET/POST/DELETE handler.
+ */
 void route(Connection &conn) {
     Request &req = conn.req;
 

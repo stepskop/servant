@@ -20,9 +20,11 @@ CgiProcess::CgiProcess(pid_t pid, int stdin_fd, int stdout_fd)
         in_sent(0),
         started(std::time(NULL)) {}
 
-// Sole owner of the child's lifetime: close any open pipe ends and reap the
-// child so it never lingers as a zombie. Safe to run in any state because every
-// fd is sentinel -1 until wired up and reset to -1 once closed elsewhere.
+/*
+ * Sole owner of the child's lifetime: close any open pipe ends and clean up the
+ * child so it never lingers as a dead process. Safe to run in any state because
+ * every fd is sentinel -1 until wired up and reset to -1 once closed elsewhere.
+ */
 CgiProcess::~CgiProcess() {
     if (this->stdin_fd != -1) close(this->stdin_fd);
     if (this->stdout_fd != -1) close(this->stdout_fd);
@@ -32,8 +34,10 @@ CgiProcess::~CgiProcess() {
     }
 }
 
-// The SCRIPT_NAME portion of a CGI target: everything up to and including the
-// script file e.g. "/cgi-bin/x.py/a/b" with ext ".py" -> "/cgi-bin/x.py".
+/*
+ * The SCRIPT_NAME portion of a CGI target: everything up to and including the
+ * script file e.g. "/cgi-bin/x.py/a/b" with ext ".py" -> "/cgi-bin/x.py".
+ */
 static std::string cgi_script_name(const std::string &target, const std::string &ext) {
     size_t pos = target.find(ext);
     while (pos != std::string::npos) {
@@ -47,6 +51,10 @@ static std::string cgi_script_name(const std::string &target, const std::string 
     return target; // Fallback: no extension match, treat the whole target as the script name.
 }
 
+/*
+ * Build the CGI environment for the request: the standard CGI/1.1 meta-variables
+ * plus every request header passed through as HTTP_<UPPER_SNAKE>.
+ */
 static std::vector<std::string> build_cgi_env(Connection &conn, const std::string &script_name) {
     const Request &req = conn.req;
     std::vector<std::string> env;
@@ -87,6 +95,11 @@ static std::vector<std::string> build_cgi_env(Connection &conn, const std::strin
     return env;
 }
 
+/*
+ * Fork the configured CGI interpreter for the request, wiring pipes to its
+ * stdin/stdout and parking the connection in WAITING_CGI; the event loop then
+ * pumps the body in and the output out. Answers 500 if the child can't start.
+ */
 void handle_cgi(Connection &conn) {
     // Drop any trailing PATH_INFO so we exec the script itself, not
     // "/cgi-bin/x.py/extra".
@@ -207,6 +220,11 @@ void handle_cgi(Connection &conn) {
     conn.state = WAITING_CGI;
 }
 
+/*
+ * Parse the child's raw output (header block, blank line, body) into a Response,
+ * applying its Status:/Content-Type:/Location: and dropping server-owned headers.
+ * Malformed output (no header separator, or no recognised header) becomes a 502.
+ */
 Response parse_cgi_output(const std::string &raw) {
     // Split at the first blank line separating CGI headers from the body.
     // Accept both CRLF and bare-LF line endings; take whichever comes first.

@@ -5,6 +5,7 @@
 
 static const char *RESET = "\033[0m";
 
+// Prefix a message with its connection's fd tag, e.g. "[4] ...".
 std::string with_fd(int fd, std::string msg) {
     std::stringstream ss;
     ss << "[" << fd << "]" << " " << msg;
@@ -22,6 +23,7 @@ const char *label_for(LogLevel level) {
     return "?";
 }
 
+// ANSI color escape for a level.
 const char *color_for(LogLevel level) {
     switch (level) {
         case DEBUG:   return "\033[36m"; // cyan

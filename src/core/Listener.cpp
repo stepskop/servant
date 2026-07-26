@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cerrno>
 
+// Prepare a listener for the group's first server host:port (socket not opened yet).
 Listener::Listener(std::vector<const ServerConfig *> &server_group): fd(-1), server_group(server_group), server(server_group[0]) {
     this->host = server_group[0]->host;
     this->port = server_group[0]->port;
@@ -16,6 +17,10 @@ Listener::~Listener() {
     if (this->fd != -1) close(this->fd);
 }
 
+/*
+ * Open, bind and listen on the host:port, trying each address getaddrinfo
+ * returns until one binds. Returns 1 on success, 0 on failure.
+ */
 int Listener::start() {
     // Resolve host:port into a bindable address. getaddrinfo handles both numeric ("0.0.0.0") and named hosts.
     struct addrinfo hints;
