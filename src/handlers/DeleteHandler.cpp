@@ -5,7 +5,7 @@
 #include <cerrno>
 #include <cstring>
 
-// Resolve the target under location.root (traversal-guarded, like static) and unlink it.
+// Resolve the target under location.root and unlink it.
 // Success -> 204; the failure status is decided by errno.
 void delete_file(Connection& conn) {
     Request& req = conn.req;
