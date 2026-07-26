@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 #include <cstring>
+#include <cerrno>
 
 Listener::Listener(std::vector<const ServerConfig *> &server_group): fd(-1), server_group(server_group), server(server_group[0]) {
     this->host = server_group[0]->host;
@@ -24,15 +25,19 @@ int Listener::start() {
     hints.ai_flags = AI_PASSIVE;     // For binding a server socket.
 
     struct addrinfo *res = NULL;
-    if (getaddrinfo(this->host.c_str(), this->port.c_str(), &hints, &res)) {
-        Logger::error("getaddrinfo failed.");
+    int gai = getaddrinfo(this->host.c_str(), this->port.c_str(), &hints, &res);
+    if (gai) {
+        Logger::error(Str() << "getaddrinfo(" << this->host << ":" << this->port << ") failed: " << gai_strerror(gai));
         return 0;
     }
 
     // A host may resolve to several candidates; keep the first we can bind.
     for (struct addrinfo *p = res; p != NULL; p = p->ai_next) {
         this->fd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        if (this->fd == -1) continue;
+        if (this->fd == -1) {
+            Logger::warn(Str() << "socket() on " << this->host << ":" << this->port << " failed: " << strerror(errno));
+            continue;
+        }
 
         Logger::debug(with_fd(this->fd, "Opening server socket."));
 
@@ -46,6 +51,8 @@ int Listener::start() {
 
         if (bind(this->fd, p->ai_addr, p->ai_addrlen) == 0) break; // Bound.
 
+        // Log the bind error before close() -- close() can overwrite errno.
+        Logger::warn(Str() << "Binding " << this->host << ":" << this->port << " failed: " << strerror(errno));
         close(this->fd);
         this->fd = -1;
     }

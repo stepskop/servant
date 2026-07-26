@@ -17,9 +17,8 @@ void delete_file(Connection& conn) {
         return conn.send(Response(204));
     }
 
-    int err = errno;
-    Logger::warn(with_fd(conn.fd, Str() << "Couldn't delete " << file_path << ": " << strerror(err)));
-    switch (err) {
+    Logger::warn(with_fd(conn.fd, Str() << "Couldn't delete " << file_path << ": " << strerror(errno)));
+    switch (errno) {
         case ENOENT:
         case ENOTDIR:
             return conn.send(Response(404)); // nothing there
