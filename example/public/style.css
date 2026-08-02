@@ -34,11 +34,25 @@ p { color: #8a8a8a; margin: 0 0 1.5rem; }
 a { color: #b8332a; text-decoration: none; }
 a:hover { color: #d4af37; }
 code { background: #1f1f1f; color: #b8332a; padding: 2px 6px; border-radius: 4px; }
+ul {
+	color: #8a8a8a;
+	line-height: 1.9;
+	margin: 0 0 1.5rem;
+	padding-left: 1.2rem;
+	max-width: 34rem;
+}
+/* A command to copy, not the ASCII art the default site shows: plain and gray,
+   no glow. */
 pre {
 	font-family: ui-monospace, monospace;
-	font-size: 0.5rem;
-	line-height: 1;
-	color: #d4af37;
+	font-size: 0.85rem;
+	line-height: 1.4;
+	color: #8a8a8a;
+	background: #1f1f1f;
+	border-radius: 4px;
+	padding: 10px 14px;
 	margin: 0 0 1.5rem;
-	filter: drop-shadow(0 0 8px rgba(212, 175, 55, 0.3));
+	max-width: 90vw;
+	overflow-x: auto;
 }
+pre code { background: none; color: inherit; padding: 0; }
