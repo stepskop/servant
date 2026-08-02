@@ -15,16 +15,13 @@
  * the event loop.
  */
 int main(int argc, char** argv) {
-    if (argc > 2) {
-        Logger::error("Usage: ./webserv [config file]");
+    if (argc != 2) {
+        Logger::error("Usage: ./webserv <config file>");
         return 1;
     }
 
     Config config;
-    std::string config_path = "./default.conf";
-    if (argc == 2) {
-        config_path = argv[1];
-    }
+    std::string config_path = argv[1];
 
     if (load_config(config_path, config) == -1) {
         Logger::error(std::string("Failed to load config: ") + config_path);
@@ -32,10 +29,6 @@ int main(int argc, char** argv) {
     }
 
     std::cout << SERVANT_BANNER << std::endl;
-
-    if (argc != 2) {
-        Logger::warn("Using default config");
-    }
 
     // Ignore SIGPIPE. Piping to closed FD should not kill the server.
     signal(SIGPIPE, SIG_IGN);
