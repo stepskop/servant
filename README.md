@@ -18,7 +18,7 @@ multiplexed through one `poll()` loop. No thread per connection, no blocking I/O
 
 ```sh
 make                    # build ./webserv
-./webserv               # run with ./default.conf
+./webserv example.conf  # run with the bundled example config
 ./webserv my.conf       # run with a specific config file
 ```
 
@@ -148,7 +148,7 @@ src/
   cgi/              fork/execve a CGI script and pump its pipes through poll
   config/           turn the config file into the server/location model
   utils/            shared helpers (logging, strings, paths, file reads)
-www/                example document root used by default.conf
+www/                example document root used by example.conf
 tools/linux-build/  Docker wrapper to build/test on Linux from macOS
 ```
 
