@@ -197,6 +197,38 @@ jobs:
           cache-from: type=gha,scope=release-${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=release-${{ matrix.variant }}
 
+  # Docker Hub shows no README of its own, so push one. Kept out of the release
+  # job and allowed to fail: the images are already published by this point and
+  # a description that did not upload is not worth failing a release over.
+  description:
+    name: docker hub description
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect Docker Hub credentials
+        id: hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push the description
+        if: steps.hub.outputs.enabled == 'true'
+        continue-on-error: true
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/servant
+          readme-filepath: .github/DOCKERHUB.md
+          short-description: 'Single-threaded, poll-driven HTTP server in C++. Static files, uploads and CGI.'
+
   release:
     name: github release
     needs: [version, publish]
