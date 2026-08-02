@@ -8,7 +8,6 @@
 #include "Utils.hpp"
 #include <cstddef>
 #include <map>
-#include <sys/poll.h>
 #include <unistd.h>
 #include <utility>
 #include <poll.h>
