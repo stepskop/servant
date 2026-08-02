@@ -10,11 +10,18 @@ A HTTP server written in C++.
 A single thread serves many clients at once: every socket is non-blocking and
 multiplexed through one `poll()` loop. No thread per connection, no blocking I/O.
 
+```sh
+docker run --rm \
+    -p 8080:8080 \
+    -v /path/to/website:/var/www/html \
+    stepskop/servant
+```
+
 </div>
 
 ---
 
-## Build & run
+## Build & run locally
 
 ```sh
 make                             # build ./webserv
@@ -43,14 +50,10 @@ servant is published as a base image to extend with your own site — pick a
 document root, a config, or both:
 
 ```dockerfile
-FROM stepskop/servant:1
+FROM stepskop/servant:latest
 
 COPY site.conf /etc/servant/servant.conf
 COPY public/   /var/www/html/
-```
-
-```sh
-docker run --rm -p 8080:8080 stepskop/servant:1
 ```
 
 A worked example lives in [`example/`](example) — a document root, a config
