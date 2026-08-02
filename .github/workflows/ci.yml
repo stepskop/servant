@@ -72,8 +72,20 @@ jobs:
         include:
           - variant: debian
             dockerfile: Dockerfile
+            user: root
+            uid: 0
           - variant: alpine
             dockerfile: Dockerfile.alpine
+            user: root
+            uid: 0
+          - variant: debian-unprivileged
+            dockerfile: Dockerfile
+            user: servant
+            uid: 10001
+          - variant: alpine-unprivileged
+            dockerfile: Dockerfile.alpine
+            user: servant
+            uid: 10001
     steps:
       - uses: actions/checkout@v4
 
@@ -86,14 +98,15 @@ jobs:
           file: ${{ matrix.dockerfile }}
           load: true
           tags: servant:ci-${{ matrix.variant }}
+          build-args: RUNTIME_USER=${{ matrix.user }}
           cache-from: type=gha,scope=${{ matrix.variant }}
           cache-to: type=gha,mode=max,scope=${{ matrix.variant }}
 
-      - name: Runs as an unprivileged user
+      - name: Runs as the expected user
         run: |
           uid=$(docker run --rm --entrypoint id servant:ci-${{ matrix.variant }} -u)
-          if [ "$uid" != "10001" ]; then
-            echo "expected uid 10001, got $uid"
+          if [ "$uid" != "${{ matrix.uid }}" ]; then
+            echo "expected uid ${{ matrix.uid }}, got $uid"
             exit 1
           fi
 

@@ -1,12 +1,98 @@
 name: release
 
+# Two ways in, one code path: push a v* tag, or run this workflow by hand and
+# let it bump the last tag for you. Either way the `version` job settles on a
+# single version number that the rest of the run uses.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which part of the last released version to increase'
+        type: choice
+        options: [patch, minor, major]
+        default: patch
 
 jobs:
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag:     ${{ steps.pick.outputs.tag }}
+      version: ${{ steps.pick.outputs.version }}
+      series:  ${{ steps.pick.outputs.series }}
+      major:   ${{ steps.pick.outputs.major }}
+      stable:  ${{ steps.pick.outputs.stable }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # needs the tag history to find the last release
+
+      - name: Settle on a version
+        id: pick
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -eu
+
+          if [ "${{ github.event_name }}" = "push" ]; then
+            # Triggered by a tag someone pushed: take it as given.
+            tag="${{ github.ref_name }}"
+          else
+            prev="$(git tag -l 'v*' --sort=-v:refname | head -n1)"
+            if [ -z "$prev" ]; then
+              echo "::error::No v* tag to bump from. Create the first one by hand: git tag -a v1.0.0 -m v1.0.0 && git push origin v1.0.0"
+              exit 1
+            fi
+
+            ver="${prev#v}"
+            major="${ver%%.*}"
+            rest="${ver#*.}"
+            minor="${rest%%.*}"
+            patch="${rest#*.}"
+            patch="${patch%%-*}"   # drop any prerelease suffix
+
+            case "$BUMP" in
+              major) major=$((major + 1)); minor=0; patch=0 ;;
+              minor) minor=$((minor + 1)); patch=0 ;;
+              patch) patch=$((patch + 1)) ;;
+            esac
+
+            tag="v$major.$minor.$patch"
+            echo "Bumping $prev -> $tag ($BUMP)"
+
+            git config user.name  'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag -a "$tag" -m "$tag"
+            git push origin "$tag"
+          fi
+
+          version="${tag#v}"
+          major="${version%%.*}"
+          rest="${version#*.}"
+          minor="${rest%%.*}"
+
+          # A prerelease (v1.2.3-rc1) is published under its exact version only,
+          # so it never moves `latest` and friends.
+          case "$version" in
+            *-*) stable=false ;;
+            *)   stable=true  ;;
+          esac
+
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "series=$major.$minor"
+            echo "major=$major"
+            echo "stable=$stable"
+          } >> "$GITHUB_OUTPUT"
+
   publish:
     name: publish (${{ matrix.variant }})
+    needs: version
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -16,14 +102,32 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # `moving` is the variant's floating tag: the bare name that always
+          # points at its newest release, `latest` being the Debian root one.
           - variant: debian
             dockerfile: Dockerfile
+            user: root
             suffix: ''
+            moving: latest
           - variant: alpine
             dockerfile: Dockerfile.alpine
+            user: root
             suffix: '-alpine'
+            moving: alpine
+          - variant: debian-unprivileged
+            dockerfile: Dockerfile
+            user: servant
+            suffix: '-unprivileged'
+            moving: unprivileged
+          - variant: alpine-unprivileged
+            dockerfile: Dockerfile.alpine
+            user: servant
+            suffix: '-alpine-unprivileged'
+            moving: alpine-unprivileged
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.tag }}
 
       # Docker Hub is optional: without the secrets the release still goes out
       # to GHCR rather than failing.
@@ -58,8 +162,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # v1.2.3 -> 1.2.3, 1.2, 1, latest  (alpine: same, each -alpine suffixed).
-      # A prerelease tag such as v1.2.3-rc1 only ever gets its exact version.
+      # 1.2.3, 1.2, 1 and the variant's floating tag, each carrying the variant
+      # suffix. Raw rather than type=semver: on a manual run the git ref is a
+      # branch, so semver patterns would find no version to read.
       - name: Tags and labels
         id: meta
         uses: docker/metadata-action@v5
@@ -69,11 +174,10 @@ jobs:
             ${{ steps.hub.outputs.image }}
           flavor: latest=false
           tags: |
-            type=semver,pattern={{version}}${{ matrix.suffix }}
-            type=semver,pattern={{major}}.{{minor}}${{ matrix.suffix }}
-            type=semver,pattern={{major}}${{ matrix.suffix }}
-            type=raw,value=latest,enable=${{ matrix.variant == 'debian' && !contains(github.ref_name, '-') }}
-            type=raw,value=alpine,enable=${{ matrix.variant == 'alpine' && !contains(github.ref_name, '-') }}
+            type=raw,value=${{ needs.version.outputs.version }}${{ matrix.suffix }}
+            type=raw,value=${{ needs.version.outputs.series }}${{ matrix.suffix }},enable=${{ needs.version.outputs.stable == 'true' }}
+            type=raw,value=${{ needs.version.outputs.major }}${{ matrix.suffix }},enable=${{ needs.version.outputs.stable == 'true' }}
+            type=raw,value=${{ matrix.moving }},enable=${{ needs.version.outputs.stable == 'true' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -85,7 +189,9 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
-          build-args: VERSION=${{ github.ref_name }}
+          build-args: |
+            VERSION=${{ needs.version.outputs.version }}
+            RUNTIME_USER=${{ matrix.user }}
           provenance: mode=max
           sbom: true
           cache-from: type=gha,scope=release-${{ matrix.variant }}
@@ -93,7 +199,7 @@ jobs:
 
   release:
     name: github release
-    needs: publish
+    needs: [version, publish]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -105,26 +211,27 @@ jobs:
       - name: Create the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
           REPO: ${{ github.repository }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
+          set -eu
           gh release create "$TAG" --title "$TAG" --generate-notes --verify-tag
 
           # Prepend the pull instructions to the auto-generated changelog.
           gh release view "$TAG" --json body -q .body > generated.md
-          version="${TAG#v}"
           {
             printf '## Images\n\n'
             printf '```sh\n'
-            if [ -n "$DOCKERHUB_USERNAME" ]; then
-              printf 'docker pull %s/servant:%s\n' "$DOCKERHUB_USERNAME" "$version"
-              printf 'docker pull %s/servant:%s-alpine\n' "$DOCKERHUB_USERNAME" "$version"
-            fi
-            printf 'docker pull ghcr.io/%s:%s\n' "$REPO" "$version"
-            printf 'docker pull ghcr.io/%s:%s-alpine\n' "$REPO" "$version"
+            for suffix in '' '-alpine' '-unprivileged' '-alpine-unprivileged'; do
+              if [ -n "$DOCKERHUB_USERNAME" ]; then
+                printf 'docker pull %s/servant:%s%s\n' "$DOCKERHUB_USERNAME" "$VERSION" "$suffix"
+              fi
+              printf 'docker pull ghcr.io/%s:%s%s\n' "$REPO" "$VERSION" "$suffix"
+            done
             printf '```\n\n'
-            printf 'Linux amd64 and arm64.\n\n'
+            printf 'Linux amd64 and arm64. The `-unprivileged` images run as uid 10001.\n\n'
             cat generated.md
           } > notes.md
 

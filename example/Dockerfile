@@ -13,19 +13,18 @@
 ARG BASE=stepskop/servant:1
 FROM ${BASE}
 
-# CGI needs an interpreter on the filesystem. Root is only needed for the
-# install; the USER line below restores the unprivileged runtime user.
-USER root
+# CGI needs an interpreter on the filesystem; the base image ships none. The
+# default tag runs as root, so this needs no USER hop. On an -unprivileged base,
+# wrap it in `USER root` ... `USER servant`.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 \
  && rm -rf /var/lib/apt/lists/*
 
 # Relative paths in a config are taken from the directory holding it, so laying
 # this tree down as-is is enough — no working directory to line up, and the same
-# file still works for a local `./webserv example/servant.conf` run.
+# file still works for a local `./webserv example/servant.conf` run. The owner is
+# set so this also builds on an -unprivileged base.
 COPY --chown=servant:servant . /site/
-
-USER servant
 
 # Overrides the base image's CMD, which points at /etc/servant/servant.conf.
 CMD ["/site/servant.conf"]

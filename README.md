@@ -78,14 +78,28 @@ Everything the image guarantees, and all a downstream image needs to touch:
 | Config | `/etc/servant/servant.conf` — [`default.conf`](default.conf), static `GET` only |
 | Document root | `/var/www/html` — a placeholder page and a custom 404; replace them |
 | Port | `8080`, bound on `0.0.0.0` |
-| User | `servant`, uid/gid `10001`, non-root |
+| User | `root`, or `servant` (uid/gid `10001`) on the `-unprivileged` tags |
 | Binary | `/usr/local/bin/servant` |
 | Entrypoint | `["servant"]`, with the config path as `CMD` |
 
-The port is 8080 rather than 80 because the process does not run as root and so
-cannot bind below 1024. Map it on the host: `-p 80:8080`. Keep the listen
+Both variants listen on 8080, so the port does not change when you switch
+between them. Map it on the host if you want 80: `-p 80:8080`. Keep the listen
 address at `0.0.0.0` — a published port arrives on the container's own
 interface, so a `127.0.0.1` socket is unreachable from outside.
+
+### Which variant
+
+The default tags run as root, which keeps mounted directories writable whatever
+the host owns them as. The `-unprivileged` tags run as uid 10001 instead:
+
+```sh
+docker run --rm -p 8080:8080 stepskop/servant:1-unprivileged
+```
+
+Reach for those when the platform requires it — Kubernetes clusters on the
+restricted Pod Security Standard reject root images outright — or simply to
+reduce what a bug in the server could reach. The cost is that writable paths
+then need to be accessible to uid 10001; see below.
 
 The document root is deliberately not a `VOLUME`, which would shadow files a
 downstream image copies underneath it. Uploads are off by default: point
@@ -94,12 +108,63 @@ downstream image copies underneath it. Uploads are off by default: point
 No CGI interpreter ships in the image. Install the one you need yourself:
 
 ```dockerfile
-USER root
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 \
  && rm -rf /var/lib/apt/lists/*
-USER servant
 ```
+
+On an `-unprivileged` base, wrap that in `USER root` … `USER servant`.
+
+### Mounting instead of copying
+
+Baking a site into an image is one option; mounting one at run time is the
+other. Both target the same two paths:
+
+```sh
+docker run --rm -p 8080:8080 \
+  -v "$PWD/public:/var/www/html:ro" \
+  -v "$PWD/site.conf:/etc/servant/servant.conf:ro" \
+  stepskop/servant
+```
+
+Mount the document root read-only and nest a writable mount for uploads, so one
+`:ro` does not block the other:
+
+```sh
+-v "$PWD/public:/var/www/html:ro" \
+-v "$PWD/uploads:/var/www/html/uploads"
+```
+
+The upload directory has to exist before the server starts — a missing
+`upload_store` answers `404` rather than being created. Uploads also stay off
+until a config sets `upload_store`; the shipped one does not.
+
+**Writes and file ownership.** A bind mount carries the host's ownership through
+unchanged. Running as root, writes always succeed, but files the server creates
+come out owned by root on your host — you will need `sudo` to delete them. On an
+`-unprivileged` image the process is uid 10001, so a directory owned by your own
+account is readable but not writable and uploads fail. Either option below fixes
+that, and both leave written files owned by you rather than root:
+
+```sh
+docker run --user "$(id -u):$(id -g)" ...    # run as yourself
+sudo chown -R 10001:10001 ./uploads          # or hand the directory over (Linux)
+```
+
+Docker Desktop on macOS and Windows fakes ownership in its file-sharing layer,
+so writes succeed there whatever the uid — which is why this only surfaces once
+you deploy to a Linux host.
+
+**A mount replaces, it does not merge.** Mounting over `/var/www/html` hides the
+page and the `errors/404.html` the image ships. If your config keeps
+`error_page 404 /errors/404.html` but the mounted directory has no `errors/`,
+404s quietly fall back to the built-in page.
+
+**Named volumes are not bind mounts.** `-v sitedata:/var/www/html` copies the
+image's document root into the volume the first time it is used, then keeps
+serving that copy — so pulling a newer image will *not* change what visitors see.
+Bind mounts never do this. Use a bind mount for a site you edit, a named volume
+only for data the server writes.
 
 ### Tags
 
@@ -114,6 +179,13 @@ docker pull ghcr.io/stepskop/servant
 |-----|--|
 | `latest` | the newest Debian release |
 | `alpine` | the newest Alpine release |
+| `unprivileged` | `latest`, running as uid 10001 |
+| `alpine-unprivileged` | `alpine`, running as uid 10001 |
+
+Every release also gets pinnable versions of all four: `1.2.3`, `1.2` and `1`,
+each with the same suffix (`1-alpine`, `1-unprivileged`,
+`1-alpine-unprivileged`). Pin to `1` for patch and minor updates without a
+breaking change, or to an exact version for reproducible builds.
 
 ## Lifecycle
 

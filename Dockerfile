@@ -36,8 +36,9 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends libstdc++6 \
  && rm -rf /var/lib/apt/lists/*
 
-# Unprivileged runtime user. The default config listens on 8080 because a
-# non-root process cannot bind below 1024.
+# The user the -unprivileged variant runs as. Created in both variants so the
+# document root has a consistent owner either way. 8080 is the listen port for
+# both, since this user cannot bind below 1024.
 RUN groupadd --system --gid 10001 servant \
  && useradd --system --uid 10001 --gid servant \
             --no-create-home --shell /usr/sbin/nologin servant
@@ -52,7 +53,12 @@ COPY --chown=servant:servant www/ /var/www/html/
 
 RUN chown -R servant:servant /etc/servant
 
-USER servant
+# Which user the server runs as. Two images are published from this one file:
+# the default runs as root, so a bind-mounted directory is writable whatever the
+# host owns it as; the -unprivileged tags are built with RUNTIME_USER=servant for
+# platforms that reject root images. Both listen on 8080.
+ARG RUNTIME_USER=root
+USER ${RUNTIME_USER}
 WORKDIR /var/www/html
 EXPOSE 8080
 
