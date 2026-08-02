@@ -39,6 +39,18 @@ bool normalize_path(const std::string &path, std::string &out);
 // Read the whole regular file at path into out.
 int read_file(const std::string &path, std::string &out);
 
+// An open file to serve a response body from. fd is -1 when there is none.
+struct FileBody {
+    int fd;
+    size_t size;
+};
+
+/*
+ * Open the regular file at path to serve as a response body. On failure nothing
+ * is left open and fd is -1.
+ */
+FileBody open_body(const std::string &path);
+
 // Set a file descriptor to non-blocking mode.
 void set_nonblocking(int fd);
 

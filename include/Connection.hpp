@@ -15,6 +15,7 @@
 
 # define MAX_HEADER_SIZE 8192 // 8 KB
 # define READ_BUFFER_SIZE 8192 // 8 KB
+# define FILE_CHUNK_SIZE 65536 // 64 KB -- one slice of a streamed file body
 
 enum ConnectionState { READING_HEADERS, READING_BODY, WAITING_CGI, WRITING };
 
@@ -43,6 +44,10 @@ class Connection {
         std::string out_buf;
         // Bytes of out_buf already written.
         size_t sent;
+        // Open file the response body is being streamed from, or -1 when none.
+        int body_fd;
+        // Bytes of the file body still to be read and sent.
+        size_t body_left;
         // The request currently being read or served.
         Request req;
         // Status of the response being sent.
@@ -66,6 +71,8 @@ class Connection {
         bool should_register_cgi() const;
         // Stop and clean up the CGI child.
         void teardown_cgi();
+        // Close the streamed file body, if one is open.
+        void close_body();
 
         // Reset per-request state to read the next request on a kept-alive conn.
         void reset();

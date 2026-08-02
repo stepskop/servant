@@ -35,13 +35,16 @@ EventLoop::~EventLoop() {
         delete it->second;
 }
 
-// The poll events to watch for a connection in the given state.
-short resolve_poll_event(ConnectionState state) {
-    switch (state) {
+// The poll events to watch on a connection's socket, given where it stands.
+short resolve_poll_event(const Connection &conn) {
+    switch (conn.state) {
         case READING_HEADERS:
         case READING_BODY:
             return POLLIN;
         case WRITING:
+            // Everything queued is out and the rest of the body still has to be
+            // read from the file -> nothing to write yet, wake on the file instead.
+            if (conn.sent == conn.out_buf.size() && conn.body_fd != -1) return 0;
             return POLLOUT;
         case WAITING_CGI:
         default:
@@ -107,10 +110,11 @@ void EventLoop::accept_connection(Listener *from) {
     Logger::debug(with_fd(client_fd, "Connection accepted."));
 }
 
-// Unregister and destroy a connection, dropping its CGI fds first.
+// Unregister and destroy a connection, dropping its CGI and file fds first.
 void EventLoop::close_connection(Connection *connection) {
     Logger::debug(with_fd(connection->fd, "Closing the connection."));
     this->unregister_cgi(connection); // Drop cgi fds before ~Connection frees them (avoids dangling cgi_fds keys).
+    this->file_fds.erase(connection->body_fd); // Same for a streamed file body.
     this->connections.erase(connection->fd);
     delete connection;
 }
@@ -190,14 +194,51 @@ void EventLoop::handle_write(Connection *connection) {
         return this->close_connection(connection);
     }
     connection->sent += send_res;
+    connection->last_activity = std::time(NULL);
 
-    if (connection->sent == connection->out_buf.size()) {
-        if (!connection->keep_alive) return this->close_connection(connection);
+    if (connection->sent != connection->out_buf.size()) return;
 
-        connection->reset();
+    // Buffer drained but the body is still coming from a file -> wait for the
+    // next readable event on it to refill the buffer.
+    if (connection->body_fd != -1) return;
+    if (!connection->keep_alive) return this->close_connection(connection);
 
-        // If there is some data in the ingress buffer and it can form an request, dispatch it.
-        if (!connection->in_buf.empty() && connection->frame()) this->dispatch(connection);
+    connection->reset();
+
+    // If there is some data in the ingress buffer and it can form an request, dispatch it.
+    if (!connection->in_buf.empty() && connection->frame()) this->dispatch(connection);
+}
+
+/*
+ * Refill the write buffer with the next slice of a streamed file body. Only ever
+ * runs with the buffer drained, so at most one chunk of the file is in memory at
+ * a time. The last slice closes the file, which lets handle_write finish the
+ * response as usual.
+ */
+void EventLoop::file_read(Connection *connection) {
+    char buffer[FILE_CHUNK_SIZE];
+
+    size_t want = connection->body_left < sizeof(buffer) ? connection->body_left : sizeof(buffer);
+    ssize_t n = read(connection->body_fd, buffer, want);
+
+    Logger::debug(with_fd(connection->fd, Str() << "Read " << n << " bytes of the file body."));
+
+    if (n <= 0) {
+        // Content-Length has already gone out, so a file that errors or ends
+        // early leaves the response unfinishable -- the client would sit waiting
+        // for bytes that will never come. Drop the connection instead.
+        Logger::error(with_fd(connection->fd, "File body ended before Content-Length was reached."));
+        return this->close_connection(connection);
+    }
+
+    connection->out_buf.assign(buffer, n);
+    connection->sent = 0;
+    connection->body_left -= n;
+    connection->last_activity = std::time(NULL);
+
+    if (connection->body_left == 0) {
+        this->file_fds.erase(connection->body_fd);
+        connection->close_body();
     }
 }
 
@@ -406,12 +447,30 @@ int EventLoop::run() {
         }
 
         // Push connections pollable FDs.
+        this->file_fds.clear();
         for (std::map<int, Connection*>::iterator it = this->connections.begin(); it != this->connections.end(); it++) {
+            Connection *conn = it->second;
+
             struct pollfd connection_pfd;
             connection_pfd.fd = it->first;
-            connection_pfd.events = resolve_poll_event(it->second->state);
+            connection_pfd.events = resolve_poll_event(*conn);
 
             fds.push_back(connection_pfd);
+
+            // A file body is only worth reading once everything queued has left
+            // for the client. Registering it earlier would pull the file in
+            // faster than the socket drains and pile the whole thing up in
+            // memory -- exactly what streaming is here to avoid. Regular files
+            // are always reported ready, so this reads one chunk per loop.
+            if (conn->body_fd == -1 || conn->sent != conn->out_buf.size()) continue;
+
+            this->file_fds.insert(std::make_pair(conn->body_fd, conn));
+
+            struct pollfd file_pfd;
+            file_pfd.fd = conn->body_fd;
+            file_pfd.events = POLLIN;
+
+            fds.push_back(file_pfd);
         }
 
         // Push CGI pollable FDs.
@@ -460,6 +519,25 @@ int EventLoop::run() {
             // Is listener FD -> accept new connections.
             if (this->listeners.count(polled.fd)) {
                 if (polled.revents & POLLIN) this->accept_connection(this->listeners[polled.fd]);
+                continue;
+            }
+
+            // Is a streamed file body -> pull in its next chunk. The fd check
+            // guards against a connection that finished (or died) earlier in
+            // this same pass and had its file closed.
+            if (this->file_fds.count(polled.fd)) {
+                Connection *conn = this->file_fds[polled.fd];
+                if (conn->body_fd != polled.fd) continue;
+
+                // A regular file is always reported readable, so the only thing
+                // worth branching on is the fd itself having gone bad -- which
+                // would be our own bookkeeping at fault, not a short file.
+                if (polled.revents & (POLLERR|POLLNVAL)) {
+                    Logger::error(with_fd(polled.fd, "Invalid file descriptor for the body file. Closing."));
+                    this->close_connection(conn);
+                } else {
+                    this->file_read(conn);
+                }
                 continue;
             }
 

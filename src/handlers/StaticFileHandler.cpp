@@ -57,19 +57,23 @@ static bool build_autoindex(const std::string& dir_path, const std::string& uri,
 }
 
 /*
- * Read the regular file at `file_path` and respond with it, mapping any
- * read_file failure to the matching error status.
+ * Open the regular file at `file_path` and hand it to the response, which
+ * streams it out a chunk at a time -- a 1 GB file costs one chunk of memory, not
+ * a gigabyte, and never stalls the event loop on one big read. 403 if the file
+ * can't be opened or turns out not to be a regular file.
  */
 static void serve_file(Connection& conn, const std::string& file_path) {
     Logger::debug(Str() << "Opening the file: " << file_path);
-    std::string content;
-    int status = read_file(file_path, content);
-    if (status != 200) {
+
+    FileBody body = open_body(file_path);
+    if (body.fd == -1) {
         Logger::error(with_fd(conn.fd, Str() << "Couldn't serve the file: " << file_path));
-        return conn.send(Response(status));
+        return conn.send(Response(403));
     }
 
-    return conn.send(Response(200).header("Content-Type", get_mime_type(file_path)).body(content));
+    return conn.send(Response(200)
+        .header("Content-Type", get_mime_type(file_path))
+        .file(body.fd, body.size));
 }
 
 /*

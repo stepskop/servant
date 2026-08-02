@@ -5,6 +5,8 @@
 #include <map>
 #include <climits>
 #include <sys/fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 /*
  * Read the whole file at `path` into `out`. Returns 200 on success, 403 if it
@@ -21,6 +23,32 @@ int read_file(const std::string &path, std::string &out) {
 
     out = buffer.str();
     return 200;
+}
+
+/*
+ * Open the regular file at `path` to serve as a response body. The size is taken
+ * from the fd we actually opened, so a path swapped out underneath us can't make
+ * us announce a Content-Length the file doesn't match. Anything that isn't an
+ * openable regular file yields fd -1, with nothing left open.
+ */
+FileBody open_body(const std::string &path) {
+    FileBody body;
+    body.size = 0;
+    body.fd = open(path.c_str(), O_RDONLY);
+    if (body.fd == -1) return body;
+
+    // Don't leak the file into CGI children.
+    set_cloexec(body.fd);
+
+    struct stat stat_buf;
+    if (fstat(body.fd, &stat_buf) == -1 || !S_ISREG(stat_buf.st_mode)) {
+        close(body.fd);
+        body.fd = -1;
+        return body;
+    }
+
+    body.size = stat_buf.st_size;
+    return body;
 }
 
 Str::operator std::string() const {

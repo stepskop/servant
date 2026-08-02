@@ -18,6 +18,8 @@ Connection::Connection(int fd, const std::vector<const ServerConfig*> *server_gr
         server_group(server_group),
         state(READING_HEADERS),
         sent(0),
+        body_fd(-1),
+        body_left(0),
         res_status(0),
         cgi(NULL),
         keep_alive(false),
@@ -26,7 +28,16 @@ Connection::Connection(int fd, const std::vector<const ServerConfig*> *server_gr
 // Tear down the connection: stop any CGI child and close the socket.
 Connection::~Connection() {
     this->teardown_cgi();
+    this->close_body();
     close(this->fd);
+}
+
+// Close the file a body was being streamed from. Safe to call when there is none.
+void Connection::close_body() {
+    if (this->body_fd == -1) return;
+    close(this->body_fd);
+    this->body_fd = -1;
+    this->body_left = 0;
 }
 
 // Delete the CGI child (its dtor closes fds and cleans it up) and clear the pointer.
@@ -47,15 +58,21 @@ bool Connection::should_register_cgi() const {
 void Connection::send(Response res) {
     size_t status = res.get_status();
 
-    // If the response is an error and has no body, try to serve a custom error page if configured.
+    // If the response is an error and has no body, try to serve a custom error
+    // page if configured. Streamed like any other file: nothing stops an
+    // error_page from pointing at something huge, and a 404 is the cheapest
+    // response on the server to ask for.
     if (status >= 400 && !res.has_body() && this->location) {
         std::map<int, std::string>::const_iterator it = this->location->error_pages.find(status);
         if (it != this->location->error_pages.end()) {
-            std::string body;
             std::string path = this->location->root + it->second;
-            if (read_file(path, body) == 200) {
-                res.header("Content-Type", get_mime_type(path)).body(body);
-            }
+
+            // An unreadable or empty page is a broken config, and serving a blank
+            // one would hide that -> leave the response bodiless and let
+            // serialize() fill in the built-in default.
+            FileBody page = open_body(path);
+            if (page.fd != -1 && page.size == 0) close(page.fd);
+            else if (page.fd != -1) res.header("Content-Type", get_mime_type(path)).file(page.fd, page.size);
         }
     }
 
@@ -70,6 +87,24 @@ void Connection::send(Response res) {
     // request. Strip everything past the header block.
     bool exclude_body = this->req.method == "HEAD";
     std::string serialized = res.serialize(exclude_body);
+
+    // A file left over from an earlier response must never outlive it.
+    this->close_body();
+
+    // Take over the file this response streams its body from. Only the headers
+    // are queued here; the bytes are pulled in a chunk at a time as the socket
+    // drains, so a huge file never sits in memory. When the wire form carries no
+    // body (HEAD, 204/304) or the file is empty, nothing will ever read it --
+    // close it right away.
+    int file_fd = res.get_file_fd();
+    if (file_fd != -1) {
+        if (exclude_body || res.is_bodiless() || res.get_file_size() == 0) {
+            close(file_fd);
+        } else {
+            this->body_fd = file_fd;
+            this->body_left = res.get_file_size();
+        }
+    }
 
     this->out_buf.append(serialized);
     this->sent = 0;
@@ -186,6 +221,7 @@ void Connection::reset() {
     this->req = Request();
     this->out_buf.clear();
     this->sent = 0;
+    this->close_body();
     this->res_status = 0;
     this->state = READING_HEADERS;
     this->last_activity = std::time(NULL);

@@ -17,6 +17,8 @@ class EventLoop {
         std::map<int, Listener*> listeners;
         // CGI pipe fds mapped back to their owning connection.
         std::map<int, Connection*> cgi_fds;
+        // Streamed file-body fds mapped back to their owning connection.
+        std::map<int, Connection*> file_fds;
 
         // Accept a new client on a listener and register it.
         void accept_connection(Listener*);
@@ -26,6 +28,8 @@ class EventLoop {
         void handle_read(Connection *);
         // Flush buffered response bytes to a client.
         void handle_write(Connection *);
+        // Read the next slice of a streamed file body into the write buffer.
+        void file_read(Connection *);
         // Hand the framed request to the router for dispatch to a handler.
         void dispatch(Connection *);
 
