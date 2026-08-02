@@ -10,14 +10,11 @@ A HTTP server written in C++.
 A single thread serves many clients at once: every socket is non-blocking and
 multiplexed through one `poll()` loop. No thread per connection, no blocking I/O.
 
-```sh
-docker run --rm \
-    -p 8080:8080 \
-    -v /path/to/website:/var/www/html \
-    stepskop/servant
-```
-
 </div>
+
+```sh
+docker run --rm -p 8080:8080 -v /path/to/website:/var/www/html stepskop/servant
+```
 
 ---
 
