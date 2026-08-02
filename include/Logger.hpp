@@ -9,7 +9,12 @@ enum LogLevel { DEBUG, INFO, WARNING, ERROR };
 # define LOG_LEVEL INFO
 #endif
 
-// Static logger. Messages below LOG_LEVEL are dropped.
+/*
+ * Static logger. Messages below the threshold are dropped; the threshold is the
+ * LOG_LEVEL macro above, overridable at runtime by a LOG_LEVEL environment
+ * variable (debug|info|warn|error). Setting NO_COLOR to any non-empty value
+ * strips the ANSI escapes.
+ */
 class Logger {
     private:
         // Shared sink: format and emit a message at the given level.
