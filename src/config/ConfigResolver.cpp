@@ -40,6 +40,22 @@ static std::size_t to_bytes(const std::string &raw) {
     return val * mult;
 }
 
+/*
+ * Anchor a config path to the prefix. Absolute paths and empty ones (meaning
+ * "not set", to be inherited) are left alone; a leading "./" is dropped so the
+ * result reads as a plain path.
+ */
+static std::string anchor(const std::string &prefix, const std::string &path) {
+    if (path.empty() || path[0] == '/') return path;
+
+    std::string rest = path;
+    if (rest.compare(0, 2, "./") == 0) rest = rest.substr(2);
+
+    // A "/" prefix already ends in a slash; anything else needs one.
+    if (prefix == "/") return prefix + rest;
+    return prefix + "/" + rest;
+}
+
 // Split "host:port" | "port" and range-check the port. Writes host/port into out.
 static void resolve_listen(const std::string &listen, ServerConfig &out) {
     if (listen.empty()) throw std::runtime_error("server block missing 'listen'");
@@ -87,7 +103,7 @@ static void resolve_error_pages(const std::vector<std::pair<std::string, std::st
  * Validate one raw location block and fill in the values it inherits from the
  * server, producing a typed LocationConfig ready for the router.
  */
-static LocationConfig resolve_location(const RawLocationConfig &raw, const ServerConfig &server) {
+static LocationConfig resolve_location(const RawLocationConfig &raw, const ServerConfig &server, const std::string &prefix) {
     LocationConfig loc;
 
     if (raw.path.empty() || raw.path[0] != '/') {
@@ -108,19 +124,19 @@ static LocationConfig resolve_location(const RawLocationConfig &raw, const Serve
         }
     }
 
-    // Inheritance: fall back to the server's (already-resolved) values.
-    loc.root  = raw.root.empty()  ? server.root  : raw.root;
+    // Inheritance: fall back to the server's (already-anchored) values.
+    loc.root  = raw.root.empty()  ? server.root  : anchor(prefix, raw.root);
     loc.index = raw.index.empty() ? server.index : raw.index;
 
     // alias replaces the matched prefix rather than being appended, so it never
     // inherits from the server. Drop a trailing slash so alias + "/rest" joins cleanly.
-    loc.alias = raw.alias;
+    loc.alias = anchor(prefix, raw.alias);
     if (loc.alias.size() > 1 && loc.alias[loc.alias.size() - 1] == '/') {
         loc.alias.erase(loc.alias.size() - 1);
     }
     loc.autoindex = (raw.autoindex == "on");
     loc.client_max_body_size = raw.client_max_body_size.empty() ? server.client_max_body_size : to_bytes(raw.client_max_body_size);
-    loc.upload_dir = raw.upload_dir;
+    loc.upload_dir = anchor(prefix, raw.upload_dir);
     loc.cgi_extension = raw.cgi_extension;
     loc.cgi_interpreter = raw.cgi_interpreter;
 
@@ -154,13 +170,13 @@ static LocationConfig resolve_location(const RawLocationConfig &raw, const Serve
  * Resolve one server block: split listen into host/port, apply index/body-size
  * defaults, resolve its locations.
  */
-static ServerConfig resolve_server(const RawServerConfig &raw) {
+static ServerConfig resolve_server(const RawServerConfig &raw, const std::string &prefix) {
     ServerConfig server;
 
     resolve_listen(raw.listen, server);
 
     server.server_names = raw.server_names;
-    server.root  = raw.root;
+    server.root  = anchor(prefix, raw.root);
     server.index = !raw.index.empty() // may stay empty (Phase 4 default)
         ? raw.index
         : "index.html";
@@ -171,7 +187,7 @@ static ServerConfig resolve_server(const RawServerConfig &raw) {
 
     bool has_root = false;
     for (size_t i = 0; i < raw.locations.size(); i++) {
-        server.locations.push_back(resolve_location(raw.locations[i], server));
+        server.locations.push_back(resolve_location(raw.locations[i], server, prefix));
         if (server.locations.back().path == "/") has_root = true;
     }
 
@@ -180,19 +196,19 @@ static ServerConfig resolve_server(const RawServerConfig &raw) {
     if (!has_root) {
         RawLocationConfig raw_root;
         raw_root.path = "/";
-        server.locations.push_back(resolve_location(raw_root, server));
+        server.locations.push_back(resolve_location(raw_root, server, prefix));
     }
 
     return server;
 }
 
 // Resolve the whole raw config into the typed Config the runtime reads.
-Config resolve(const RawConfig &raw) {
+Config resolve(const RawConfig &raw, const std::string &prefix) {
     if (raw.servers.empty()) throw std::runtime_error("Config must define at least one server block");
 
     Config config;
     for (size_t i = 0; i < raw.servers.size(); i++) {
-        config.servers.push_back(resolve_server(raw.servers[i]));
+        config.servers.push_back(resolve_server(raw.servers[i], prefix));
     }
     return config;
 }

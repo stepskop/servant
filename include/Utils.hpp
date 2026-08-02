@@ -36,6 +36,9 @@ bool safe_atol(const std::string &s, long &out);
 // Lexically collapse "." and ".." in an absolute URL path.
 bool normalize_path(const std::string &path, std::string &out);
 
+// The directory part of a path, or "." when it names something in the current one.
+std::string dir_name(const std::string &path);
+
 // Read the whole regular file at path into out.
 int read_file(const std::string &path, std::string &out);
 

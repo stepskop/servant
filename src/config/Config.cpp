@@ -30,6 +30,8 @@ std::string LocationConfig::fs_path(const std::string &url_path) const {
 
 /*
  * Read, tokenize, parse and resolve the config file at path into config.
+ * Relative paths inside the config are taken from the directory holding it, so
+ * where the server is started from does not matter.
  * Returns 1 on success, -1 if the file can't be read or the config is invalid.
  */
 int load_config(const std::string &path, Config &config) {
@@ -41,7 +43,7 @@ int load_config(const std::string &path, Config &config) {
 
     try {
         RawConfig raw = parse_config(tokens);
-        config = resolve(raw);
+        config = resolve(raw, dir_name(path));
 
         std::ostringstream ss;
         ss << "Parsed " << config.servers.size() << " server block(s)";

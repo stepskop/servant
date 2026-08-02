@@ -181,6 +181,18 @@ bool insensitive_equals(const std::string &a, const std::string &b) {
     return true;
 }
 
+/*
+ * The directory part of a path: "example/servant.conf" -> "example",
+ * "/etc/servant/servant.conf" -> "/etc/servant". A bare filename has no
+ * directory part, so it yields "." — the current directory.
+ */
+std::string dir_name(const std::string &path) {
+    std::string::size_type slash = path.find_last_of('/');
+    if (slash == std::string::npos) return ".";
+    if (slash == 0) return "/";                 // "/servant.conf" lives at the root
+    return path.substr(0, slash);
+}
+
 // Return a lowercased (ASCII) copy of s.
 std::string to_lower(std::string s) {
     for (size_t i = 0; i < s.size(); i++) {
