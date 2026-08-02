@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>servant — example</title>
+	<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+	<h1><span class="online"></span>Example site</h1>
+	<p>Built on the <a href="https://github.com/stepskop/servant">servant</a> base image. Every link below is a different feature of <code>servant.conf</code>:</p>
+	<ul>
+		<li><a href="/uploads/">/uploads/</a> — autoindexed, and accepts <code>POST</code> and <code>DELETE</code></li>
+		<li><a href="/scripts/script.py">/scripts/script.py</a> — CGI through python3</li>
+		<li><a href="/old">/old</a> — a 301 redirect back here</li>
+		<li><a href="/nope">/nope</a> — the custom 404 page</li>
+	</ul>
+	<p>Upload something:</p>
+	<pre><code>curl -X POST --data-binary @file.txt http://localhost:8080/uploads/file.txt</code></pre>
+</body>
+</html>

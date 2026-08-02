@@ -17,13 +17,103 @@ multiplexed through one `poll()` loop. No thread per connection, no blocking I/O
 ## Build & run
 
 ```sh
-make                    # build ./webserv
-./webserv example.conf  # run with the bundled example config
-./webserv my.conf       # run with a specific config file
+make                             # build ./webserv
+./webserv example/servant.conf   # run with the bundled example config
+./webserv my.conf                # run with a specific config file
 ```
 
-The listen address(es), document root, allowed methods, error pages, etc. all
-come from the config file — nothing is hardcoded.
+The config file is required. The listen address(es), document root, allowed
+methods, error pages, etc. all come from it — nothing is hardcoded.
+
+Relative paths are taken from the directory holding the config file, 
+the way nginx resolves against its prefix, so a config
+behaves the same whatever directory you start the server from. Absolute paths
+are used as written.
+
+Two environment variables affect the process itself:
+
+| Variable | Effect |
+|----------|--------|
+| `LOG_LEVEL` | `debug`, `info`, `warn` or `error`. Overrides the compile-time default; an unrecognized value is ignored. |
+| `NO_COLOR` | Set to any non-empty value to drop the ANSI escapes from log output. |
+
+## Docker
+
+servant is published as a base image to extend with your own site — pick a
+document root, a config, or both:
+
+```dockerfile
+FROM stepskop/servant:1
+
+COPY site.conf /etc/servant/servant.conf
+COPY public/   /var/www/html/
+```
+
+```sh
+docker run --rm -p 8080:8080 stepskop/servant:1
+```
+
+A worked example lives in [`example/`](example) — a document root, a config
+using every feature, and a Python CGI interpreter layered on top of the base
+image. It is self-contained, so the directory is the whole build context:
+
+```sh
+cd example
+docker build -t servant-example .
+docker run --rm -p 8080:8080 servant-example
+```
+
+The same config runs without Docker at all:
+
+```sh
+./webserv example/servant.conf
+```
+
+### Image API
+
+Everything the image guarantees, and all a downstream image needs to touch:
+
+| | |
+|---|---|
+| Config | `/etc/servant/servant.conf` — [`default.conf`](default.conf), static `GET` only |
+| Document root | `/var/www/html` — a placeholder page and a custom 404; replace them |
+| Port | `8080`, bound on `0.0.0.0` |
+| User | `servant`, uid/gid `10001`, non-root |
+| Binary | `/usr/local/bin/servant` |
+| Entrypoint | `["servant"]`, with the config path as `CMD` |
+
+The port is 8080 rather than 80 because the process does not run as root and so
+cannot bind below 1024. Map it on the host: `-p 80:8080`. Keep the listen
+address at `0.0.0.0` — a published port arrives on the container's own
+interface, so a `127.0.0.1` socket is unreachable from outside.
+
+The document root is deliberately not a `VOLUME`, which would shadow files a
+downstream image copies underneath it. Uploads are off by default: point
+`upload_store` at a directory your image creates and owns.
+
+No CGI interpreter ships in the image. Install the one you need yourself:
+
+```dockerfile
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 \
+ && rm -rf /var/lib/apt/lists/*
+USER servant
+```
+
+### Tags
+
+Published to both Docker Hub and GHCR, for linux/amd64 and linux/arm64:
+
+```sh
+docker pull stepskop/servant
+docker pull ghcr.io/stepskop/servant
+```
+
+| Tag | |
+|-----|--|
+| `latest` | the newest Debian release |
+| `alpine` | the newest Alpine release |
 
 ## Lifecycle
 
@@ -148,8 +238,11 @@ src/
   cgi/              fork/execve a CGI script and pump its pipes through poll
   config/           turn the config file into the server/location model
   utils/            shared helpers (logging, strings, paths, file reads)
-www/                example document root used by example.conf
+www/                default document root — shipped in the image, reused by the example
+example/            the showcase: every feature turned on, and the image it builds
 tools/linux-build/  Docker wrapper to build/test on Linux from macOS
+Dockerfile          the published image; Dockerfile.alpine is the musl variant
+.github/workflows/  build and smoke-test on every push, publish on a v* tag
 ```
 
 ## Components

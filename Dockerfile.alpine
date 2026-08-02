@@ -1,0 +1,57 @@
+# syntax=docker/dockerfile:1
+
+# servant — Alpine variant. Same image API as the Debian build, roughly a third
+# of the size, but musl libc instead of glibc: CGI interpreters and anything
+# else a downstream image installs must be musl-compatible.
+#
+#   FROM stepskop/servant:1-alpine
+#   COPY site.conf /etc/servant/servant.conf
+#   COPY public/   /var/www/html/
+
+FROM alpine:3.20 AS build
+
+RUN apk add --no-cache g++ make
+
+WORKDIR /src
+COPY Makefile ./
+COPY include/ include/
+COPY src/     src/
+
+RUN make -j"$(nproc)"
+
+FROM alpine:3.20
+
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="servant" \
+      org.opencontainers.image.description="A single-threaded, poll-driven HTTP server written in C++." \
+      org.opencontainers.image.source="https://github.com/stepskop/servant" \
+      org.opencontainers.image.url="https://github.com/stepskop/servant" \
+      org.opencontainers.image.documentation="https://github.com/stepskop/servant#docker" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${VERSION}"
+
+RUN apk add --no-cache libstdc++
+
+# Unprivileged runtime user. The default config listens on 8080 because a
+# non-root process cannot bind below 1024.
+RUN addgroup -S -g 10001 servant \
+ && adduser -S -u 10001 -G servant -H -s /sbin/nologin servant
+
+COPY --from=build /src/webserv    /usr/local/bin/servant
+COPY default.conf                 /etc/servant/servant.conf
+
+# Placeholder document root: a landing page, its stylesheet and the 404 the
+# default config points at. Not declared as a VOLUME on purpose — that would
+# shadow whatever a downstream image copies underneath it.
+COPY --chown=servant:servant www/ /var/www/html/
+
+RUN chown -R servant:servant /etc/servant
+
+USER servant
+WORKDIR /var/www/html
+EXPOSE 8080
+
+# No HEALTHCHECK: the runtime image ships no HTTP client to probe with. Add one
+# in your own image, or use an orchestrator-side probe against GET /.
+ENTRYPOINT ["servant"]
+CMD ["/etc/servant/servant.conf"]

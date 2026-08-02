@@ -1,0 +1,9 @@
+# Everything is excluded; the build context is opted into file by file. What
+# actually lands in the image is narrowed further by the COPY lines in the
+# Dockerfile. The example ships its own context and .dockerignore.
+*
+!Makefile
+!include
+!src
+!www
+!default.conf
