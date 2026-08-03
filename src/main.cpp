@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::cout << SERVANT_BANNER << std::endl;
+    std::cout << banner() << std::endl;
 
     // Ignore SIGPIPE. Piping to closed FD should not kill the server.
     signal(SIGPIPE, SIG_IGN);

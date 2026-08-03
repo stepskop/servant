@@ -3,6 +3,16 @@ NAME        = webserv
 CXX         = c++
 CXXFLAGS    = -Wall -Wextra -Werror -std=c++98 -pedantic -pedantic-errors
 
+# ----- Version -------------------------------------------------------------- #
+# The version the banner prints. Read from the last git tag, with the leading v
+# dropped so it matches the published Docker tags (v1.2.3 -> 1.2.3, plus -dirty
+# when the tree has uncommitted changes). Outside a checkout it is "dev": the
+# Docker builds copy only the sources, so they pass the number in themselves.
+#   make VERSION=1.2.3
+GIT_VERSION := $(shell git describe --tags --dirty --always 2>/dev/null)
+VERSION     ?= $(if $(GIT_VERSION),$(patsubst v%,%,$(GIT_VERSION)),dev)
+CXXFLAGS    += -DVERSION='"$(VERSION)"'
+
 CONFIG_DIR   = config/
 CONFIG_SRC   = Config.cpp Tokenizer.cpp ConfigParser.cpp ConfigResolver.cpp
 
@@ -19,7 +29,7 @@ CGI_DIR      = cgi/
 CGI_SRC      = Cgi.cpp
 
 UTILS_DIR    = utils/
-UTILS_SRC    = Logger.cpp Utils.cpp
+UTILS_SRC    = Banner.cpp Logger.cpp Utils.cpp
 
 MAIN         = main.cpp
 
@@ -37,7 +47,7 @@ INCLUDE_DIR  = ./include/
 HEADERS      = -I$(INCLUDE_DIR)
 # Every object depends on the headers: edit a .hpp and its dependents rebuild.
 # Listed explicitly (no wildcard) — add new headers here.
-HDR          = Config.hpp ConfigParser.hpp ConfigResolver.hpp Connection.hpp EventLoop.hpp Listener.hpp Logger.hpp \
+HDR          = Banner.hpp Config.hpp ConfigParser.hpp ConfigResolver.hpp Connection.hpp EventLoop.hpp Listener.hpp Logger.hpp \
                Request.hpp Response.hpp Status.hpp Utils.hpp Mime.hpp \
                Handler.hpp Cgi.hpp
 INCLUDES     = $(addprefix $(INCLUDE_DIR), $(HDR))
@@ -46,6 +56,17 @@ INCLUDES     = $(addprefix $(INCLUDE_DIR), $(HDR))
 OBJ_DIR      = ./build/
 OBJS         = $(addprefix $(OBJ_DIR), $(SRCS:.cpp=.o))
 
+# The version reaches the compiler through CXXFLAGS, but make compares file
+# timestamps and never sees a changed flag: on its own, a new VERSION would leave
+# the previous string baked into the objects. This file records the version the
+# objects were built with, and every object depends on it. It is rewritten only
+# when the version actually differs, so an unchanged version rebuilds nothing.
+# The write happens while make reads this file, ahead of any rule.
+VERSION_STAMP := $(OBJ_DIR).version
+$(shell mkdir -p $(OBJ_DIR); \
+        [ "$$(cat $(VERSION_STAMP) 2>/dev/null)" = "$(VERSION)" ] \
+          || printf '%s\n' "$(VERSION)" > $(VERSION_STAMP))
+
 # ----- Rules ---------------------------------------------------------------- #
 all: $(NAME)
 
@@ -53,7 +74,7 @@ $(NAME): $(OBJS)
 	$(CXX) $(CXXFLAGS) $(OBJS) -o $(NAME)
 	@echo "Done."
 
-$(OBJ_DIR)%.o: $(SRC_DIR)%.cpp $(INCLUDES)
+$(OBJ_DIR)%.o: $(SRC_DIR)%.cpp $(INCLUDES) $(VERSION_STAMP)
 	@mkdir -p $(dir $@)
 	$(CXX) $(CXXFLAGS) $(HEADERS) -c $< -o $@
 

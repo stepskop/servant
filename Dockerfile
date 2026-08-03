@@ -19,7 +19,11 @@ COPY Makefile ./
 COPY include/ include/
 COPY src/     src/
 
-RUN make -j"$(nproc)"
+# The version the banner reports. Only the sources are copied in, so the
+# Makefile's `git describe` finds no checkout to read — release.yml passes the
+# number here as a build arg, and a plain `docker build` gets "dev".
+ARG VERSION=dev
+RUN make -j"$(nproc)" VERSION="$VERSION"
 
 FROM debian:bookworm-slim
 

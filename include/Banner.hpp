@@ -1,17 +1,10 @@
 #ifndef BANNER_HPP
 # define BANNER_HPP
 
-// const at namespace scope has internal linkage, so this is safe to include
-// even though it is a definition.
-const char *const SERVANT_BANNER =
-    "\n"
-    "███████╗███████╗██████╗ ██╗   ██╗ █████╗ ███╗   ██╗████████╗\n"
-    "██╔════╝██╔════╝██╔══██╗██║   ██║██╔══██╗████╗  ██║╚══██╔══╝\n"
-    "███████╗█████╗  ██████╔╝██║   ██║███████║██╔██╗ ██║   ██║\n"
-    "╚════██║██╔══╝  ██╔══██╗╚██╗ ██╔╝██╔══██║██║╚██╗██║   ██║\n"
-    "███████╗███████╗██║  ██║ ╚████╔╝ ██║  ██║██║ ╚████║   ██║\n"
-    "╚══════╝╚══════╝╚═╝  ╚═╝  ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝   ╚═╝\n"
-    "\n"
-    "                   Servant of the Web\n";
+# include <string>
+
+// The startup banner: the ASCII art logo, with the tagline and version centered
+// underneath it.
+std::string banner();
 
 #endif
