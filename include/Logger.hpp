@@ -10,7 +10,8 @@ enum LogLevel { DEBUG, INFO, WARNING, ERROR };
 #endif
 
 /*
- * Static logger. Messages below the threshold are dropped; the threshold is the
+ * Static logger. Every message is prefixed with the local wall-clock time and
+ * its level. Messages below the threshold are dropped; the threshold is the
  * LOG_LEVEL macro above, overridable at runtime by a LOG_LEVEL environment
  * variable (debug|info|warn|error). Setting NO_COLOR to any non-empty value
  * strips the ANSI escapes.

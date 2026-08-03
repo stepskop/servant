@@ -2,10 +2,12 @@
 #include "Utils.hpp"
 
 #include <cstdlib>
+#include <ctime>
 #include <iostream>
 #include <sstream>
 
 static const char *RESET = "\033[0m";
+static const char *DIM   = "\033[2m";
 
 /*
  * Threshold from the LOG_LEVEL environment variable, falling back to the
@@ -27,6 +29,17 @@ static LogLevel resolve_threshold() {
 static bool resolve_color() {
     const char *env = std::getenv("NO_COLOR");
     return env == NULL || env[0] == '\0';
+}
+
+// Local wall-clock time of the message, e.g. "2026-08-03 14:22:31".
+static std::string timestamp() {
+    char       buf[20];
+    std::time_t now = std::time(NULL);
+    std::tm    *tm  = std::localtime(&now);
+
+    if (tm == NULL || std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", tm) == 0)
+        return "";
+    return buf;
 }
 
 // Prefix a message with its connection's fd tag, e.g. "[4] ...".
@@ -84,7 +97,8 @@ void Logger::log_msg(std::string msg, LogLevel level) {
     // ERROR to stderr, rest to stdout.
     std::ostream &out = (level >= ERROR) ? std::cerr : std::cout;
 
-    out << "[" << (color ? color_for(level) : "") << label_for(level) << (color ? RESET : "") << "] "
+    out << (color ? DIM : "") << timestamp() << (color ? RESET : "") << " "
+        << "[" << (color ? color_for(level) : "") << label_for(level) << (color ? RESET : "") << "] "
         << msg
         << std::endl;
 }
