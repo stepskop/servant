@@ -22,7 +22,11 @@ RUN make -j"$(nproc)"
 FROM alpine:3.20
 
 ARG VERSION=dev
-LABEL org.opencontainers.image.title="servant" \
+# `maintainer` is the conventional label docker inspect surfaces; `authors` is
+# the OCI-native spelling of the same thing.
+LABEL maintainer="Stepan Skopek (https://github.com/stepskop)" \
+      org.opencontainers.image.authors="Stepan Skopek (https://github.com/stepskop)" \
+      org.opencontainers.image.title="servant" \
       org.opencontainers.image.description="A single-threaded, poll-driven HTTP server written in C++." \
       org.opencontainers.image.source="https://github.com/stepskop/servant" \
       org.opencontainers.image.url="https://github.com/stepskop/servant" \
